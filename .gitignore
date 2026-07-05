@@ -1,0 +1,27 @@
+# ── SEGURETAT — mai pujar a GitHub ───────────────────────────────────────────
+# API key d'Anthropic — CRÍTICO: mai pujar a cap repositori
+.env
+
+# ── Entorn virtual de Python ──────────────────────────────────────────────────
+.venv/
+
+# ── Caches de Python ─────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Metadades de Claude Code ──────────────────────────────────────────────────
+.claude/
+
+# ── Fitxers generats per la app (sortides, no codi font) ─────────────────────
+output_cap*.docx
+datos/sesion.json
+
+# ── Fitxers temporals de Word (bloqueig mentre el fitxer és obert) ───────────
+~$*
+
+# ── Carpetes de dades locals ──────────────────────────────────────────────────
+sesiones/
+
+# ── Mac OS ────────────────────────────────────────────────────────────────────
+.DS_Store
