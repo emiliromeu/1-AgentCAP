@@ -629,7 +629,13 @@ def _contexto_profesores(estado_profesores):
         "  - Si la fecha no es válida, explica el problema y pide corrección. No añadas.",
         "  - Si es válida, confirma a Rosa que quedó apuntada y pregunta si hay otra.",
         "",
-        "Si Rosa dice que NO hay excepciones o que ya están todas: llama a terminar_profesores.",
+        "Si Rosa dice que NO hay excepciones o que ya están todas, puedes llamar a",
+        "terminar_profesores. PERO además, y esto es lo más importante, dile a Rosa:",
+        "  'Cuando ya no haya más profesores sustitutos que añadir, pulsa el botón",
+        "  ✅ No hay más profesores sustitutos que tienes debajo del chat. No hace",
+        "  falta que me lo confirmes por aquí.'",
+        "El botón es la forma fiable de cerrar este paso — menciónalo siempre en algún",
+        "momento de esta fase, aunque tú también llames a terminar_profesores.",
     ]))
 
     return "\n".join(lineas)
@@ -664,7 +670,9 @@ def _contexto_alumnos(estado_alumnos):
         lineas.append(
             "Haz DOS preguntas en UN solo mensaje:\n"
             "  1. ¿Quiere añadir alumnos ahora, o de momento no hay ninguno?\n"
-            "     - Si Rosa dice que NO hay alumnos: llama a terminar_alumnos. Lista vacía válida.\n"
+            "     - Si Rosa dice que NO hay alumnos: dile que pulse el botón\n"
+            "       ✅ Ya he añadido todos los alumnos que tiene debajo del chat\n"
+            "       (también puedes llamar a terminar_alumnos, pero el botón es lo fiable).\n"
             "  2. Si sí hay alumnos: ¿todos hacen el curso COMPLETO, o hay alguno de AMPLIACIÓN?\n"
             "     Guarda mentalmente la respuesta — cambia cómo preguntas a cada alumno (ver abajo).\n"
             "\n"
@@ -699,7 +707,12 @@ def _contexto_alumnos(estado_alumnos):
         "      · Si NO es válido: explica el error y pide que lo corrija. No añadas el alumno.\n"
         "      · Si es válido: llama a anadir_alumno (nombre, documento, tipo_curso).\n"
         "  - Después de añadir, pregunta si hay otro alumno.\n"
-        "  - Cuando Rosa diga que ya están todos, llama a terminar_alumnos."
+        "  - Cuando Rosa diga que ya están todos, puedes llamar a terminar_alumnos.\n"
+        "    PERO además, y esto es lo más importante, dile en algún momento:\n"
+        "    'Cuando hayas terminado de añadir alumnos, pulsa el botón\n"
+        "    ✅ Ya he añadido todos los alumnos que tienes debajo del chat.\n"
+        "    No hace falta que me lo confirmes por aquí.'\n"
+        "    El botón es la forma fiable de cerrar este paso."
     )
 
     return "\n".join(lineas)
@@ -1115,6 +1128,96 @@ def crear_estado_conversacion():
     }
 
 
+def avanzar_o_generar(estados, bloque_actual):
+    """
+    Comprueba si el bloque actual está completo y, si lo está, avanza al siguiente
+    bloque pendiente o genera el documento final si era el último.
+
+    Se usa tanto desde procesar_turno (cuando el LLM completa un bloque llamando a
+    una tool) como desde el manejador de los botones "cerrar lista" de la interfaz
+    (que completan un bloque directamente por código, sin pasar por el LLM) — así
+    la lógica de avance/generación vive en un único sitio.
+
+    Devuelve:
+      {
+        "bloque_actual":  str,        # actualizado si avanzó, igual si no
+        "avanzo":         bool,       # True si cambió de bloque o se generó el documento
+        "terminado":      bool,       # True si se generó el documento
+        "ruta_docx":      str | None,
+        "respuesta_text": str | None, # mensaje fijo a mostrar en el chat si se generó el documento
+      }
+    """
+    bloque_actual_def = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
+    if not bloque_actual_def["bloque_completo"](estados[bloque_actual]):
+        return {
+            "bloque_actual":  bloque_actual,
+            "avanzo":         False,
+            "terminado":      False,
+            "ruta_docx":      None,
+            "respuesta_text": None,
+        }
+
+    idx           = BLOQUES.index(bloque_actual_def)
+    siguiente_idx = idx + 1
+    while siguiente_idx < len(BLOQUES):
+        bloque_sig = BLOQUES[siguiente_idx]
+        condicion  = bloque_sig.get("condicion")
+        # Salta blocs que no apliquen (condició falsa) o que ja estan complets
+        if condicion is not None and not condicion(estados):
+            siguiente_idx += 1
+            continue
+        if bloque_sig["bloque_completo"](estados[bloque_sig["nombre"]]):
+            siguiente_idx += 1
+            continue
+        break
+
+    if siguiente_idx < len(BLOQUES):
+        return {
+            "bloque_actual":  BLOQUES[siguiente_idx]["nombre"],
+            "avanzo":         True,
+            "terminado":      False,
+            "ruta_docx":      None,
+            "respuesta_text": None,
+        }
+
+    # ── Todos los bloques completos: generar el documento ──────────────────────
+    pf_estat = estados["prueba_fuego"]
+    pf = None
+    if (estados["tipo_curso"]["tipo_curso"] == "mercancias"
+            and pf_estat["fecha"] is not None):
+        pf = crear_prueba_fuego(
+            pf_estat["fecha"], pf_estat["hora_inicio"], pf_estat["proveedor"],
+        )
+    resultat_h = generar_horario(
+        estados["calendario"], estados["franjas"], estados["orden"],
+        tipo_curso=estados["tipo_curso"]["tipo_curso"],
+        prueba_fuego=pf,
+    )
+    horari = aplicar_profesores(resultat_h["horario"], estados["profesores"])
+    ruta_docx = generar_document(
+        horari, str(_BASE / "output_cap.docx"),
+        estado_alumnos=estados["alumnos"],
+        estado_practicas=estados["practicas"],
+        estado_calendario=estados["calendario"],
+        estado_franjas=estados["franjas"],
+        tipo_curso=estados["tipo_curso"]["tipo_curso"],
+    )
+
+    respuesta_text = (
+        "¡Perfecto! Ya tengo todos los datos. "
+        "He generado el horario completo. "
+        "Puedes descargarlo con el botón que aparece abajo."
+    )
+
+    return {
+        "bloque_actual":  bloque_actual,
+        "avanzo":         True,
+        "terminado":      True,
+        "ruta_docx":      ruta_docx,
+        "respuesta_text": respuesta_text,
+    }
+
+
 def procesar_turno(entrada, estado_conversacion, client):
     """
     Processa un torn de la conversa per a la UI de Streamlit.
@@ -1187,53 +1290,13 @@ def procesar_turno(entrada, estado_conversacion, client):
                     })
             messages.append({"role": "user", "content": resultats})
 
-            bloque_actual_def = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
-            if bloque_actual_def["bloque_completo"](estados[bloque_actual]):
-                idx           = BLOQUES.index(bloque_actual_def)
-                siguiente_idx = idx + 1
-                while siguiente_idx < len(BLOQUES):
-                    bloque_sig = BLOQUES[siguiente_idx]
-                    condicion  = bloque_sig.get("condicion")
-                    # Salta blocs que no apliquen (condició falsa) o que ja estan complets
-                    if condicion is not None and not condicion(estados):
-                        siguiente_idx += 1
-                        continue
-                    if bloque_sig["bloque_completo"](estados[bloque_sig["nombre"]]):
-                        siguiente_idx += 1
-                        continue
-                    break
-
-                if siguiente_idx < len(BLOQUES):
-                    bloque_actual = BLOQUES[siguiente_idx]["nombre"]
-                else:
-                    pf_estat = estados["prueba_fuego"]
-                    pf = None
-                    if (estados["tipo_curso"]["tipo_curso"] == "mercancias"
-                            and pf_estat["fecha"] is not None):
-                        pf = crear_prueba_fuego(
-                            pf_estat["fecha"], pf_estat["hora_inicio"], pf_estat["proveedor"],
-                        )
-                    resultat_h = generar_horario(
-                        estados["calendario"], estados["franjas"], estados["orden"],
-                        tipo_curso=estados["tipo_curso"]["tipo_curso"],
-                        prueba_fuego=pf,
-                    )
-                    horari = aplicar_profesores(resultat_h["horario"], estados["profesores"])
-                    ruta_docx = generar_document(
-                        horari, str(_BASE / "output_cap.docx"),
-                        estado_alumnos=estados["alumnos"],
-                        estado_practicas=estados["practicas"],
-                        estado_calendario=estados["calendario"],
-                        estado_franjas=estados["franjas"],
-                        tipo_curso=estados["tipo_curso"]["tipo_curso"],
-                    )
-                    respuesta_text = (
-                        "¡Perfecto! Ya tengo todos los datos. "
-                        "He generado el horario completo. "
-                        "Puedes descargarlo con el botón que aparece abajo."
-                    )
-                    terminado = True
-                    break
+            resultado_avance = avanzar_o_generar(estados, bloque_actual)
+            bloque_actual = resultado_avance["bloque_actual"]
+            if resultado_avance["terminado"]:
+                ruta_docx      = resultado_avance["ruta_docx"]
+                respuesta_text = resultado_avance["respuesta_text"]
+                terminado      = True
+                break
 
         else:  # end_turn
             for bloc in resposta.content:

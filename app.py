@@ -4,7 +4,10 @@ import streamlit as st
 from dotenv import load_dotenv
 from anthropic import Anthropic
 
-from agente.cerebro import procesar_turno, crear_estado_conversacion
+from agente.cerebro import (
+    procesar_turno, crear_estado_conversacion, avanzar_o_generar,
+    marcar_terminado_alumnos, marcar_terminado_profesores,
+)
 from agente.persistencia import guardar_estado, cargar_estado, eliminar_estado
 
 load_dotenv()
@@ -165,6 +168,43 @@ def _init_limpio():
     st.session_state.recuperant    = False   # flag: mostrant el diàleg de recuperació
 
 
+def _cerrar_lista_abierta(nombre_bloque, marcar_terminado_fn, mensaje_chat):
+    """
+    Cierra por código (sin pasar por el LLM) un bloque de lista abierta
+    (alumnos o profesores) cuando Rosa pulsa el botón correspondiente.
+
+    Marca el bloque como terminado, avanza al siguiente bloque pendiente o
+    genera el documento si era el último, añade el mensaje de confirmación
+    al chat, persiste el estado y recarga la página.
+    """
+    estados = st.session_state.conv_state["estados"]
+    marcar_terminado_fn(estados[nombre_bloque])
+
+    resultado = avanzar_o_generar(estados, st.session_state.conv_state["bloque_actual"])
+    st.session_state.conv_state["bloque_actual"] = resultado["bloque_actual"]
+
+    st.session_state.chat_messages.append({"role": "assistant", "content": mensaje_chat})
+
+    if resultado["terminado"]:
+        st.session_state.terminado = True
+        st.session_state.ruta_docx = resultado["ruta_docx"]
+        st.session_state.chat_messages.append(
+            {"role": "assistant", "content": resultado["respuesta_text"]}
+        )
+
+    conv_amb_xat = {
+        **st.session_state.conv_state,
+        "chat_messages": st.session_state.chat_messages,
+    }
+    guardar_estado(
+        conv_amb_xat,
+        st.session_state.terminado,
+        st.session_state.ruta_docx,
+        RUTA_SESSIO,
+    )
+    st.rerun()
+
+
 # ── Primera càrrega: decidir si iniciar net o oferir recuperar ────────────────
 if "chat_messages" not in st.session_state:
     sessio = cargar_estado(RUTA_SESSIO)
@@ -218,6 +258,35 @@ for msg in st.session_state.chat_messages:
     avatar = "🛰️" if msg["role"] == "assistant" else "🧑‍🚀"
     with st.chat_message(msg["role"], avatar=avatar):
         st.write(msg["content"])
+
+# ── Botons "cerrar lista" per als blocs d'alumnes i professors ───────────────
+# Via de tancament fiable, per codi, que no depèn que el LLM cridi
+# terminar_alumnos / terminar_profesores.
+if not st.session_state.terminado:
+    _bloque_actual = st.session_state.conv_state["bloque_actual"]
+    _estados       = st.session_state.conv_state["estados"]
+
+    if _bloque_actual == "alumnos":
+        if st.button("✅ Ya he añadido todos los alumnos", use_container_width=True):
+            _cerrar_lista_abierta(
+                "alumnos", marcar_terminado_alumnos,
+                "¡Perfecto! Ya tengo todos los alumnos apuntados.",
+            )
+        st.caption(
+            "Pulsa aquí cuando hayas metido a todos los alumnos del curso "
+            "— o si no hay ninguno esta vez."
+        )
+
+    elif _bloque_actual == "profesores" and _estados["profesores"]["profesor_general"] is not None:
+        if st.button("✅ No hay más profesores sustitutos", use_container_width=True):
+            _cerrar_lista_abierta(
+                "profesores", marcar_terminado_profesores,
+                "¡Perfecto! Ya tengo anotados los profesores que dan las clases.",
+            )
+        st.caption(
+            "Pulsa aquí si el profesor general da todas las clases, "
+            "o cuando ya hayas añadido los profesores sustitutos."
+        )
 
 # ── Botó de descàrrega + "Empezar un CAP nuevo" si ja ha acabat ──────────────
 if st.session_state.terminado:
