@@ -424,12 +424,37 @@ _NOMBRES_LEGIBLES = {
 
 
 def _instrucciones_genericas(siguiente):
-    """Instrucciones para datos que Rosa da directamente: dia_amarillo, dia_verde."""
+    """Instrucciones para datos que Rosa da directamente: dia_amarillo."""
     return "\n".join([
         "Pídeselo a Rosa con naturalidad, sin tecnicismos.",
         "Cuando Rosa te dé la fecha, valídala con la herramienta validar_fecha.",
         "Si es válida, repítesela para que la confirme ('¿Es el DD/MM/AAAA, correcto?').",
         f"Cuando Rosa confirme, llama a confirmar_dato con nombre_dato='{siguiente}' y el valor.",
+    ])
+
+
+def _instrucciones_dia_verde(estado):
+    """
+    Instrucciones específicas para dia_verde (examen).
+
+    No usa _instrucciones_genericas porque este dato tiene una regla de coherencia
+    con dia_amarillo que el LLM debe conocer explícitamente: si no se le dice, el
+    modelo puede "inventarse" la relación al revés (rechazar exámenes posteriores
+    al día amarillo, cuando es justo lo contrario lo que exige el CAP).
+    """
+    dia_amarillo = estado["dia_amarillo"]["valor"]
+    return "\n".join([
+        "Pídeselo a Rosa con naturalidad, sin tecnicismos.",
+        f"IMPORTANTE — regla de coherencia: el día verde (examen) tiene que ser "
+        f"POSTERIOR al día amarillo ({dia_amarillo}, el último día del curso) — "
+        "nunca antes ni el mismo día. Primero termina el curso, luego se hace el examen.",
+        "Cuando Rosa te dé la fecha, valídala con la herramienta validar_fecha "
+        "(esto solo comprueba que sea una fecha real; NO comprueba la relación con "
+        "el día amarillo — de eso ya se encarga el sistema al confirmar el dato).",
+        "Si es válida, repítesela para que la confirme ('¿Es el DD/MM/AAAA, correcto?').",
+        "Cuando Rosa confirme, llama a confirmar_dato con nombre_dato='dia_verde' y el valor. "
+        "Si el sistema lo rechaza por no ser posterior al día amarillo, explícaselo a Rosa "
+        "con el motivo que te devuelva y pídele una fecha posterior.",
     ])
 
 
@@ -480,6 +505,8 @@ def _contexto_calendario(estado):
             lineas.append(_instrucciones_fecha_inicio(estado))
         elif siguiente == "festivos":
             lineas.append(_instrucciones_festivos(estado))
+        elif siguiente == "dia_verde":
+            lineas.append(_instrucciones_dia_verde(estado))
         else:
             lineas.append(_instrucciones_genericas(siguiente))
     else:
