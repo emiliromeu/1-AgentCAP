@@ -414,6 +414,33 @@ _HERRAMIENTAS = [
     HERRAMIENTA_TERMINAR_PRUEBA_FUEGO,
 ]
 
+# Tools de validación pura (sin efectos secundarios): siempre disponibles, en cualquier bloque.
+_VALIDACIONES_GLOBALES = {"validar_fecha", "validar_dni", "validar_horario", "proponer_inicio"}
+
+# Qué tools (con efectos) pertenecen a cada bloque. Se usa para enviar al LLM SOLO las
+# relevantes al bloque activo — así no puede ni intentar actuar sobre un bloque que no toca
+# todavía (refuerza al guard _fuera_de_turno con una barrera estructural, no solo de rechazo).
+_TOOLS_POR_BLOQUE = {
+    "tipo_curso":   {"guardar_tipo_curso"},
+    "calendario":   {"confirmar_dato"},
+    "prueba_fuego": {"guardar_prueba_fuego", "terminar_prueba_fuego"},
+    "franjas":      {"confirmar_dato"},
+    "orden":        {"confirmar_dato"},
+    "alumnos":      {"anadir_alumno", "terminar_alumnos"},
+    "profesores":   {"marcar_profesor_general", "anadir_excepcion_profesor", "terminar_profesores"},
+    "practicas":    {"guardar_profesor_practicas", "terminar_practicas"},
+}
+
+
+def _herramientas_para_bloque(bloque_actual):
+    """
+    Devuelve solo las tools relevantes para bloque_actual (+ las de validación pura).
+    La última lleva cache_control para que Anthropic cachee el bloque de tools.
+    """
+    nombres = _VALIDACIONES_GLOBALES | _TOOLS_POR_BLOQUE.get(bloque_actual, set())
+    seleccionadas = [h for h in _HERRAMIENTAS if h["name"] in nombres]
+    return seleccionadas[:-1] + [{**seleccionadas[-1], "cache_control": {"type": "ephemeral"}}]
+
 # Etiquetas en español para mostrar en el system prompt variable
 _NOMBRES_LEGIBLES = {
     "dia_amarillo": "día amarillo (último día del plan)",
@@ -1387,9 +1414,6 @@ def procesar_turno(entrada, estado_conversacion, client):
     terminado      = False
     ruta_docx      = None
 
-    # La darrera tool porta cache_control perquè Anthropic cacheiï totes les tools
-    _tools_cached = _HERRAMIENTAS[:-1] + [{**_HERRAMIENTAS[-1], "cache_control": {"type": "ephemeral"}}]
-
     while True:
         # system com a llista: part estàtica cacheada primer, part dinàmica sense caché després
         system_blocks = [
@@ -1397,12 +1421,15 @@ def procesar_turno(entrada, estado_conversacion, client):
              "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": _construir_contexto_estado(bloque_actual, estados)},
         ]
+        # Se recalcula en cada vuelta: bloque_actual puede cambiar dentro de este bucle,
+        # y solo se ofrecen al LLM las tools del bloque activo en ese momento.
+        tools_turno = _herramientas_para_bloque(bloque_actual)
 
         resposta = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=4096,
             system=system_blocks,
-            tools=_tools_cached,
+            tools=tools_turno,
             messages=messages,
         )
         u = resposta.usage
