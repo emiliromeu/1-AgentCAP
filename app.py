@@ -87,6 +87,9 @@ h1 { color: #FFFFFF !important; font-weight: 600 !important; letter-spacing: -0.
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 header[data-testid="stHeader"] {background: transparent !important;}
+[data-testid="stBottom"], [data-testid="stBottomBlockContainer"] {
+    background: #0A0E1A !important;
+}
 
 /* Movimiento sutil de las estrellas */
 @keyframes drift {
