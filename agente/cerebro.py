@@ -55,7 +55,6 @@ from agente.recogida_tipo_curso import (
 )
 from agente.recogida_prueba_fuego import (
     crear_estado as crear_estado_prueba_fuego,
-    guardar_prueba_fuego as guardar_prueba_fuego_pf,
     marcar_terminado as marcar_terminado_prueba_fuego,
     bloque_completo as bloque_completo_prueba_fuego,
 )
@@ -365,9 +364,10 @@ HERRAMIENTA_GUARDAR_PRUEBA_FUEGO = {
     "name": "guardar_prueba_fuego",
     "description": (
         "Guarda els dades de la Prova de Foc (sessió de 2h de MM.PP amb proveïdor extern): "
-        "la data del dissabte i l'hora d'inici. El proveïdor és FAST PARCMOTOR per defecte; "
-        "passa'l només si Rosa vol canviar-lo. "
-        "Llama-la quan Rosa hagi indicat la data i l'hora."
+        "la data del dissabte i l'hora d'inici. Es poden guardar per separat: primer la data "
+        "(quan Rosa la doni) i, en un torn posterior, l'hora (quan Rosa la doni). També es poden "
+        "passar totes dues juntes si Rosa les dona alhora. "
+        "El proveïdor és FAST PARCMOTOR per defecte; passa'l només si Rosa vol canviar-lo."
     ),
     "input_schema": {
         "type": "object",
@@ -388,7 +388,7 @@ HERRAMIENTA_GUARDAR_PRUEBA_FUEGO = {
                 )
             }
         },
-        "required": ["fecha", "hora_inicio"]
+        "required": ["fecha"]
     }
 }
 
@@ -838,7 +838,7 @@ def _contexto_prueba_fuego(estado_pf):
     hora  = estado_pf["hora_inicio"]
     prov  = estado_pf["proveedor"]
 
-    if estado_pf["terminado"]:
+    if fecha is not None and hora is not None:
         return (
             f"PROVA DE FOC: COMPLETADA. "
             f"Data: {fecha.strftime('%d/%m/%Y')}, "
@@ -848,31 +848,50 @@ def _contexto_prueba_fuego(estado_pf):
 
     lineas = ["=== BLOQUE ACTUAL: PRUEBA DE FUEGO ==="]
     lineas.append("ESTADO:")
-    lineas.append(f"  - Fecha del sábado PF: {'pendiente' if fecha is None else fecha.strftime('%d/%m/%Y')}")
-    lineas.append(f"  - Hora de inicio:      {'pendiente' if hora  is None else hora.strftime('%H:%M')}")
+    lineas.append(f"  - Fecha del sábado PF: {'PENDIENTE' if fecha is None else 'YA GUARDADA (' + fecha.strftime('%d/%m/%Y') + ')'}")
+    lineas.append(f"  - Hora de inicio:      {'PENDIENTE' if hora  is None else 'YA GUARDADA (' + hora.strftime('%H:%M') + ')'}")
     lineas.append(f"  - Proveedor:           {prov}")
-    lineas.append("\n".join([
-        "",
-        "AHORA TE TOCA: recoger los datos de la Prueba de Fuego (Prova de Foc).",
-        "",
-        "La Prueba de Fuego es una sesión EXTERNA de 2h de MM.PP que Rosa programa",
-        "en un sábado concreto del curso con el proveedor FAST PARCMOTOR (o similar).",
-        "",
-        "Pregunta a Rosa:",
-        "  1. ¿En qué SÁBADO se hará la prueba de fuego?",
-        "     Debe ser un sábado dentro del rango del curso.",
-        "  2. ¿A qué hora empieza? (p.ej. 10:00)",
-        "  3. ¿El proveedor es FAST PARCMOTOR?",
-        "     Solo preguntar si Rosa quiere cambiarlo; el valor por defecto es FAST PARCMOTOR.",
-        "",
-        "Cuando Rosa dé los datos, llama a guardar_prueba_fuego con fecha (DD/MM/AAAA) y",
-        "hora_inicio (HH:MM). Pasa 'proveedor' solo si Rosa indicó uno distinto.",
-        "Esa llamada por sí sola completa este paso — el sistema avanza automáticamente,",
-        "no hace falta ninguna otra llamada después.",
-        "",
-        "Si el sistema devuelve error (no es sábado o fuera del curso), explícaselo a Rosa",
-        "y pide que corrija la fecha.",
-    ]))
+
+    if fecha is None:
+        # Aún no hay fecha: pedirla (y de paso la hora, si Rosa la da junta).
+        lineas.append("\n".join([
+            "",
+            "AHORA TE TOCA: recoger los datos de la Prueba de Fuego (Prova de Foc).",
+            "",
+            "La Prueba de Fuego es una sesión EXTERNA de 2h de MM.PP que Rosa programa",
+            "en un sábado concreto del curso con el proveedor FAST PARCMOTOR (o similar).",
+            "",
+            "Pregunta a Rosa:",
+            "  1. ¿En qué SÁBADO se hará la prueba de fuego?",
+            "     Debe ser un sábado dentro del rango del curso.",
+            "  2. ¿A qué hora empieza? (p.ej. 10:00)",
+            "  3. ¿El proveedor es FAST PARCMOTOR?",
+            "     Solo preguntar si Rosa quiere cambiarlo; el valor por defecto es FAST PARCMOTOR.",
+            "",
+            "Si Rosa te da la fecha y la hora juntas, llama a guardar_prueba_fuego con",
+            "fecha (DD/MM/AAAA) y hora_inicio (HH:MM) a la vez. Pasa 'proveedor' solo si",
+            "Rosa indicó uno distinto.",
+            "Si Rosa solo te da la fecha por ahora, llama a guardar_prueba_fuego SOLO con",
+            "fecha — el sistema la guarda y te recordará pedir la hora en el siguiente turno.",
+            "",
+            "Si el sistema devuelve error (no es sábado o fuera del curso), explícaselo a Rosa",
+            "y pide que corrija la fecha.",
+        ]))
+    else:
+        # *** CLAVE: la fecha ya está guardada, SOLO falta la hora. ***
+        lineas.append(
+            "\n".join([
+                "",
+                f"*** IMPORTANTE: YA TIENES LA FECHA ({fecha.strftime('%d/%m/%Y')}). "
+                "SOLO TE FALTA LA HORA. ***",
+                "NO hables de otra cosa (alumnos, profesores, franjas, etc.) hasta tener la hora.",
+                f"Pregunta a Rosa: '¿A qué hora empieza la prueba de fuego del "
+                f"{fecha.strftime('%d/%m/%Y')}?' (p.ej. 10:00)",
+                "Cuando te la dé, llama a guardar_prueba_fuego SOLO con hora_inicio (HH:MM) —",
+                "no hace falta que repitas la fecha, ya está guardada.",
+            ])
+        )
+
     return "\n".join(lineas)
 
 
@@ -1127,44 +1146,76 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
         marcar_terminado_practicas(estados["practicas"])
         return {"terminado": True, "profesor": estados["practicas"]["profesor"]}
     if nombre == "guardar_prueba_fuego":
+        print(f"[DEBUG-PF] guardar_prueba_fuego LLAMADA: argumentos={argumentos} bloque_actual={bloque_actual!r}")
         motivo = _fuera_de_turno("prueba_fuego", bloque_actual)
         if motivo:
+            print(f"[DEBUG-PF] RECHAZADA por fuera de turno: {motivo}")
             return {"guardado": False, "motivo": motivo}
-        fecha_str     = argumentos["fecha"]
-        hora_str      = argumentos["hora_inicio"]
+
+        fecha_str     = argumentos.get("fecha")
+        hora_str      = argumentos.get("hora_inicio")
         proveedor_arg = argumentos.get("proveedor")
-        # Parsear i validar la data
-        r_fecha = parsear_fecha(fecha_str)
-        if not r_fecha["valida"]:
-            return {"guardado": False, "motivo": r_fecha["mensaje"]}
-        fecha_date = r_fecha["fecha"]
-        # Parsear l'hora
-        try:
-            hora_time = datetime.strptime(hora_str, "%H:%M").time()
-        except ValueError:
-            return {"guardado": False, "motivo": f"Hora no vàlida: {hora_str!r}. Usa format HH:MM."}
-        # Validar que la data és dissabte
-        if fecha_date.weekday() != 5:
-            noms = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
-            return {
-                "guardado": False,
-                "motivo": (
-                    f"La fecha {fecha_str} es {noms[fecha_date.weekday()]}, no sábado. "
-                    "La prueba de fuego debe programarse un sábado del curso."
-                ),
-            }
-        # Validar que la data és dins del curs
-        bloque_pf = next(b for b in BLOQUES if b["nombre"] == "prueba_fuego")
-        resultado_val = bloque_pf["validacion"]("fecha", fecha_str, estados)
-        if not resultado_val["coherente"]:
-            return {"guardado": False, "motivo": resultado_val["mensaje"]}
-        # Guardar
-        guardar_prueba_fuego_pf(estados["prueba_fuego"], fecha_date, hora_time, proveedor_arg)
+        estado_pf     = estados["prueba_fuego"]
+
+        if fecha_str is None and hora_str is None:
+            print("[DEBUG-PF] RECHAZADA: ni fecha ni hora en la llamada")
+            return {"guardado": False, "motivo": "Indica al menos la fecha o la hora."}
+
+        # ── Fecha (si se proporciona en esta llamada) ───────────────────────
+        if fecha_str is not None:
+            r_fecha = parsear_fecha(fecha_str)
+            if not r_fecha["valida"]:
+                print(f"[DEBUG-PF] RECHAZADA por fecha inválida: {r_fecha['mensaje']}")
+                return {"guardado": False, "motivo": r_fecha["mensaje"]}
+            fecha_date = r_fecha["fecha"]
+            if fecha_date.weekday() != 5:
+                noms = ["Lunes","Martes","Miércoles","Jueves","Viernes","Sábado","Domingo"]
+                print(f"[DEBUG-PF] RECHAZADA por no ser sábado: {fecha_str} es {noms[fecha_date.weekday()]}")
+                return {
+                    "guardado": False,
+                    "motivo": (
+                        f"La fecha {fecha_str} es {noms[fecha_date.weekday()]}, no sábado. "
+                        "La prueba de fuego debe programarse un sábado del curso."
+                    ),
+                }
+            bloque_pf = next(b for b in BLOQUES if b["nombre"] == "prueba_fuego")
+            cal = estados["calendario"]
+            print(
+                f"[DEBUG-PF] comprobando rango: fecha_inicio={cal['fecha_inicio']['valor']!r} "
+                f"dia_amarillo={cal['dia_amarillo']['valor']!r}"
+            )
+            resultado_val = bloque_pf["validacion"]("fecha", fecha_str, estados)
+            if not resultado_val["coherente"]:
+                print(f"[DEBUG-PF] RECHAZADA por rango del curso: {resultado_val['mensaje']}")
+                return {"guardado": False, "motivo": resultado_val["mensaje"]}
+            estado_pf["fecha"] = fecha_date
+            print(f"[DEBUG-PF] fecha guardada: {fecha_date}")
+
+        # ── Hora (si se proporciona en esta llamada) ────────────────────────
+        if hora_str is not None:
+            if estado_pf["fecha"] is None:
+                print("[DEBUG-PF] RECHAZADA: se dio la hora sin tener antes la fecha")
+                return {"guardado": False, "motivo": "Primero necesito la fecha del sábado de la prueba de fuego."}
+            try:
+                estado_pf["hora_inicio"] = datetime.strptime(hora_str, "%H:%M").time()
+                print(f"[DEBUG-PF] hora guardada: {estado_pf['hora_inicio']}")
+            except ValueError:
+                print(f"[DEBUG-PF] RECHAZADA por hora inválida: {hora_str!r}")
+                return {"guardado": False, "motivo": f"Hora no vàlida: {hora_str!r}. Usa format HH:MM."}
+
+        if proveedor_arg is not None:
+            estado_pf["proveedor"] = proveedor_arg
+
+        falta_fecha = estado_pf["fecha"] is None
+        falta_hora  = estado_pf["hora_inicio"] is None
+        print(f"[DEBUG-PF] GUARDADO OK. falta_fecha={falta_fecha} falta_hora={falta_hora}")
         return {
             "guardado":    True,
-            "fecha":       fecha_str,
-            "hora_inicio": hora_str,
-            "proveedor":   estados["prueba_fuego"]["proveedor"],
+            "fecha":       estado_pf["fecha"].strftime("%d/%m/%Y") if estado_pf["fecha"] else None,
+            "hora_inicio": estado_pf["hora_inicio"].strftime("%H:%M") if estado_pf["hora_inicio"] else None,
+            "proveedor":   estado_pf["proveedor"],
+            "falta_fecha": falta_fecha,
+            "falta_hora":  falta_hora,
         }
     if nombre == "terminar_prueba_fuego":
         motivo = _fuera_de_turno("prueba_fuego", bloque_actual)
