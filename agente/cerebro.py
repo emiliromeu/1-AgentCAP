@@ -887,15 +887,21 @@ def _contexto_prueba_fuego(estado_pf):
             "No hables de franjas, alumnos, profesores ni prácticas hasta recoger la fecha",
             "Y la hora de la prueba de fuego.",
             "",
-            "AHORA TE TOCA: recoger los datos de la Prueba de Fuego (Prova de Foc).",
+            "QUÉ ES LA PRUEBA DE FUEGO (para que no la confundas con otra cosa):",
+            "La Prueba de Fuego es un EXAMEN puntual — una única sesión de evaluación de 2h",
+            "de MM.PP con un proveedor externo (FAST PARCMOTOR), en UN sábado concreto del",
+            "curso, a UNA hora concreta de inicio.",
             "",
-            "La Prueba de Fuego es una sesión EXTERNA de 2h de MM.PP que Rosa programa",
-            "en un sábado concreto del curso con el proveedor FAST PARCMOTOR (o similar).",
+            "*** NO ES el horario semanal de las clases (eso son las 'franjas horarias' —",
+            "un bloque DISTINTO y POSTERIOR, con horas que se repiten cada semana, p.ej.",
+            "'de 18:00 a 21:15 lunes a jueves'). NO preguntes '¿a qué hora empiezan y",
+            "terminan las clases?' — esa pregunta es de franjas, no de aquí. ***",
             "",
-            "Pregunta a Rosa:",
-            "  1. ¿En qué SÁBADO se hará la prueba de fuego?",
+            "AHORA TE TOCA: recoger los dos datos de la Prueba de Fuego (el EXAMEN).",
+            "Pregunta a Rosa, con estas palabras o muy parecidas:",
+            "  1. '¿Qué día (sábado) es la prueba de fuego (el examen)?'",
             "     Debe ser un sábado dentro del rango del curso.",
-            "  2. ¿A qué hora empieza? (p.ej. 10:00)",
+            "  2. '¿A qué hora empieza la prueba de fuego (el examen)?' (p.ej. 10:00)",
             "  3. ¿El proveedor es FAST PARCMOTOR?",
             "     Solo preguntar si Rosa quiere cambiarlo; el valor por defecto es FAST PARCMOTOR.",
             "",
@@ -916,7 +922,9 @@ def _contexto_prueba_fuego(estado_pf):
                 f"*** IMPORTANTE: YA TIENES LA FECHA ({fecha.strftime('%d/%m/%Y')}). "
                 "SOLO TE FALTA LA HORA. ***",
                 "NO hables de otra cosa (alumnos, profesores, franjas, etc.) hasta tener la hora.",
-                f"Pregunta a Rosa: '¿A qué hora empieza la prueba de fuego del "
+                "Esto es la hora de INICIO del EXAMEN de ese día concreto — NO el horario",
+                "semanal de las clases (eso es franjas, y viene después).",
+                f"Pregunta a Rosa: '¿A qué hora empieza la prueba de fuego (el examen) del "
                 f"{fecha.strftime('%d/%m/%Y')}?' (p.ej. 10:00)",
                 "Cuando te la dé, llama a guardar_prueba_fuego SOLO con hora_inicio (HH:MM) —",
                 "no hace falta que repitas la fecha, ya está guardada.",
@@ -1328,17 +1336,27 @@ def avanzar_o_generar(estados, bloque_actual):
 
     idx           = BLOQUES.index(bloque_actual_def)
     siguiente_idx = idx + 1
+    print(f"[DEBUG-AVANCE] bloque_actual={bloque_actual!r} completo -> buscando siguiente desde idx={siguiente_idx}")
     while siguiente_idx < len(BLOQUES):
         bloque_sig = BLOQUES[siguiente_idx]
         condicion  = bloque_sig.get("condicion")
+        aplica     = condicion(estados) if condicion is not None else True
+        completo   = bloque_sig["bloque_completo"](estados[bloque_sig["nombre"]])
+        print(
+            f"[DEBUG-AVANCE]   evaluando '{bloque_sig['nombre']}' (idx={siguiente_idx}): "
+            f"tiene_condicion={condicion is not None} aplica={aplica} completo={completo} "
+            f"-> {'SALTA (no aplica)' if condicion is not None and not aplica else ('SALTA (ya completo)' if completo else 'SE ELIGE ESTE')}"
+        )
         # Salta blocs que no apliquen (condició falsa) o que ja estan complets
-        if condicion is not None and not condicion(estados):
+        if condicion is not None and not aplica:
             siguiente_idx += 1
             continue
-        if bloque_sig["bloque_completo"](estados[bloque_sig["nombre"]]):
+        if completo:
             siguiente_idx += 1
             continue
         break
+    print(f"[DEBUG-AVANCE] resultado: siguiente_idx={siguiente_idx} -> "
+          f"{BLOQUES[siguiente_idx]['nombre'] if siguiente_idx < len(BLOQUES) else '(NINGUNO: genera documento)'}")
 
     if siguiente_idx < len(BLOQUES):
         return {
