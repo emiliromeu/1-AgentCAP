@@ -1,6 +1,7 @@
 # Bucle principal del agente: recibe el mensaje de la usuaria, decide qué herramienta llamar y devuelve la respuesta.
 
 import os
+import re
 import json
 from decimal import Decimal
 from datetime import date, time, datetime
@@ -85,6 +86,11 @@ class _DecimalEncoder(json.JSONEncoder):
         if isinstance(obj, time):
             return obj.strftime("%H:%M")
         return super().default(obj)
+
+
+# Patrón para extraer horas HH:MM (o H:MM) de un string de franja horaria,
+# ignorando palabras de relleno como "de", "a", "hasta" o separadores sueltos.
+_PATRON_HORA = re.compile(r"\d{1,2}:\d{2}")
 
 
 HERRAMIENTA_GUARDAR_TIPO_CURSO = {
@@ -543,6 +549,8 @@ def _instrucciones_horario(nombre_dato):
         f"                Ejemplo: si validar_horario devolvió inicio='18:00' y fin='21:30',",
         f"                el valor debe ser {{\"inicio\": \"18:00\", \"fin\": \"21:30\"}}",
         f"                NUNCA un string como '18:00-21:30' — siempre el objeto {{inicio, fin}}.",
+        f"                OJO: aunque validar_horario usa los nombres hora_inicio/hora_fin,",
+        f"                para confirmar_dato las claves son 'inicio' y 'fin' (sin el prefijo 'hora_').",
     ])
 
 
@@ -992,22 +1000,20 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
         bloque_def    = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
         estado_bloque = estados[bloque_actual]
         # Franges horàries: el valor SEMPRE ha de ser {"inicio": "HH:MM", "fin": "HH:MM"}.
-        # Si el LLM passa un string ("18:00-21:30"), intentem convertir-lo; si no és possible,
-        # rebutgem amb missatge clar perquè el LLM ho reintenti amb el format correcte.
+        # El LLM a vegades confon els noms amb els paràmetres de validar_horario
+        # (hora_inicio/hora_fin) o envia un string; ho acceptem igual convertint-ho.
+        # Si no es pot interpretar de cap manera, rebutgem amb missatge clar.
         _NOMS_FRANJA = {"horario_lun_jue", "horario_viernes", "horario_sabado"}
         if nombre_dato in _NOMS_FRANJA:
+            # Alias: hora_inicio/hora_fin (nombres de validar_horario) → inicio/fin
+            if isinstance(valor, dict) and "inicio" not in valor and "fin" not in valor \
+                    and "hora_inicio" in valor and "hora_fin" in valor:
+                valor = {"inicio": valor["hora_inicio"], "fin": valor["hora_fin"]}
             if isinstance(valor, str):
-                # Intenta parsejar "HH:MM-HH:MM" o "HH:MM HH:MM"
-                separadors = ["-", " a ", " "]
-                convertit  = None
-                for sep in separadors:
-                    parts = valor.strip().split(sep, 1)
-                    if len(parts) == 2:
-                        ini, fi = parts[0].strip(), parts[1].strip()
-                        if ":" in ini and ":" in fi:
-                            convertit = {"inicio": ini, "fin": fi}
-                            break
-                if convertit is None:
+                # Extrae las dos horas HH:MM ignorando palabras de relleno
+                # ("de", "a", "hasta", "-", etc.): "de 18:00 a 21:30" → ["18:00", "21:30"]
+                horas = _PATRON_HORA.findall(valor)
+                if len(horas) != 2:
                     return {
                         "guardado": False,
                         "nombre_dato": nombre_dato,
@@ -1018,7 +1024,7 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
                             "Vuelve a llamar a confirmar_dato con ese formato."
                         ),
                     }
-                valor = convertit
+                valor = {"inicio": horas[0], "fin": horas[1]}
             if not (isinstance(valor, dict) and "inicio" in valor and "fin" in valor):
                 return {
                     "guardado": False,
