@@ -8,7 +8,7 @@ title Generador CAP - Autoescola Olivella
 cd /d "%~dp0"
 
 :: ── Comprova que la instal·lació s'hagi fet ───────────────────
-if not exist ".venv\Scripts\activate.bat" (
+if not exist ".venv\Scripts\python.exe" (
     echo.
     echo [ERROR] El entorno virtual no esta instalado.
     echo.
@@ -31,9 +31,8 @@ if not exist ".env" (
     exit /b 1
 )
 
-:: ── Activa l'entorn i arrenca la app ─────────────────────────
-call .venv\Scripts\activate.bat
-
+:: ── Arrenca la app sempre amb la ruta del .venv, per no dependre ─
+::    del PATH ni de que l'activació hagi funcionat ───────────────
 echo.
 echo ============================================================
 echo   Iniciando Generador de Horarios CAP...
@@ -42,7 +41,7 @@ echo   Para cerrar la app, cierra esta ventana.
 echo ============================================================
 echo.
 
-streamlit run app.py
+".venv\Scripts\python.exe" -m streamlit run app.py
 
 :: Si streamlit acaba (per error o per Ctrl+C), es mostra el missatge
 if errorlevel 1 (

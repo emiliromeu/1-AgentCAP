@@ -48,13 +48,11 @@ if exist ".venv\Scripts\activate.bat" (
 )
 echo.
 
-:: ── Activa l'entorn virtual ───────────────────────────────────
-call .venv\Scripts\activate.bat
-
-:: ── Instal·la les dependències ────────────────────────────────
+:: ── Instal·la les dependències (sempre amb la ruta del .venv, ─
+::    per no dependre del PATH ni d'una activació correcta) ─────
 echo Instalando dependencias (puede tardar unos minutos)...
 echo.
-pip install -r requirements.txt
+".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 (
     echo.
     echo [ERROR] Hubo un problema instalando las dependencias.

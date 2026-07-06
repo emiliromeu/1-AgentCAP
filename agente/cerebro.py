@@ -1179,12 +1179,19 @@ def procesar_turno(entrada, estado_conversacion, client):
         if resposta.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": resposta.content})
 
+            # [DEBUG-TRAZA] texto descartado que acompaña a la(s) tool_use de esta respuesta
+            _texto_descartado = "".join(b.text for b in resposta.content if hasattr(b, "text"))
+            if _texto_descartado:
+                print(f"[DEBUG-TRAZA] TEXTO DESCARTADO (bloc={bloque_actual}): {_texto_descartado!r}")
+
             resultats = []
             for bloque in resposta.content:
                 if bloque.type == "tool_use":
+                    print(f"[DEBUG-TRAZA] TOOL LLAMADA: {bloque.name} args={bloque.input}")
                     resultat = _ejecutar_herramienta(
                         bloque.name, bloque.input, estados, bloque_actual
                     )
+                    print(f"[DEBUG-TRAZA] TOOL RESULTADO: {bloque.name} -> {resultat}")
                     resultats.append({
                         "type":        "tool_result",
                         "tool_use_id": bloque.id,
@@ -1194,6 +1201,11 @@ def procesar_turno(entrada, estado_conversacion, client):
             messages.append({"role": "user", "content": resultats})
 
             bloque_actual_def = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
+            print(
+                f"[DEBUG-TRAZA] bloque_actual={bloque_actual} "
+                f"bloque_completo={bloque_actual_def['bloque_completo'](estados[bloque_actual])} "
+                f"estado_practicas={estados.get('practicas')}"
+            )
             if bloque_actual_def["bloque_completo"](estados[bloque_actual]):
                 idx           = BLOQUES.index(bloque_actual_def)
                 siguiente_idx = idx + 1
@@ -1212,6 +1224,7 @@ def procesar_turno(entrada, estado_conversacion, client):
                 if siguiente_idx < len(BLOQUES):
                     bloque_actual = BLOQUES[siguiente_idx]["nombre"]
                 else:
+                    print("[DEBUG-TRAZA] >>> ENTRANDO EN RAMA DE GENERACIÓN DE DOCUMENTO <<<")
                     pf_estat = estados["prueba_fuego"]
                     pf = None
                     if (estados["tipo_curso"]["tipo_curso"] == "mercancias"
@@ -1233,6 +1246,7 @@ def procesar_turno(entrada, estado_conversacion, client):
                         estado_franjas=estados["franjas"],
                         tipo_curso=estados["tipo_curso"]["tipo_curso"],
                     )
+                    print(f"[DEBUG-TRAZA] documento generado, ruta_docx={ruta_docx!r}")
                     respuesta_text = (
                         "¡Perfecto! Ya tengo todos los datos. "
                         "He generado el horario completo. "
@@ -1246,6 +1260,8 @@ def procesar_turno(entrada, estado_conversacion, client):
                 if hasattr(bloc, "text"):
                     respuesta_text += bloc.text
             messages.append({"role": "assistant", "content": resposta.content})
+            print(f"[DEBUG-TRAZA] END_TURN texto mostrado a Rosa: {respuesta_text!r}")
+            print(f"[DEBUG-TRAZA] al salir por end_turn: terminado={terminado} ruta_docx={ruta_docx!r}")
             break
 
     return {
