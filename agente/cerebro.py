@@ -63,7 +63,6 @@ from herramientas.motor_prueba_fuego import crear_prueba_fuego
 from datos.orden_asignaturas import ORDEN_HABITUAL_MERCANCIAS
 from ensamblaje import generar_horario, aplicar_profesores
 from generar_documento import generar_document
-from herramientas.calculo_horas import validar_total, validar_asignaturas
 from herramientas.horarios import validar_horario
 from herramientas.validar_dni import validar_documento
 from herramientas.calendario import (
@@ -117,37 +116,6 @@ HERRAMIENTA_GUARDAR_TIPO_CURSO = {
 # Lista de herramientas que el LLM puede invocar.
 # El LLM nunca ejecuta código: solo devuelve el nombre y los argumentos.
 # Somos nosotros quienes llamamos a la función real en _ejecutar_herramienta().
-HERRAMIENTA = {
-    "name": "validar_plan_horas",
-    "description": (
-        "Valida si las horas asignadas a las asignaturas son correctas según el plan oficial CAP. "
-        "Comprueba que el total sea 130 horas y que cada asignatura tenga las horas permitidas."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "asignaturas": {
-                "type": "array",
-                "description": "Lista de asignaturas con su código y las horas asignadas.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "codigo": {
-                            "type": "string",
-                            "description": "Código de la asignatura, por ejemplo: 'MF0001'."
-                        },
-                        "horas": {
-                            "type": "string",
-                            "description": "Horas asignadas como texto, por ejemplo: '8' o '2.5'."
-                        }
-                    },
-                    "required": ["codigo", "horas"]
-                }
-            }
-        },
-        "required": ["asignaturas"]
-    }
-}
 
 
 HERRAMIENTA_VALIDAR_FECHA = {
@@ -437,7 +405,7 @@ HERRAMIENTA_TERMINAR_PRUEBA_FUEGO = {
 }
 
 _HERRAMIENTAS = [
-    HERRAMIENTA_GUARDAR_TIPO_CURSO, HERRAMIENTA, HERRAMIENTA_VALIDAR_FECHA,
+    HERRAMIENTA_GUARDAR_TIPO_CURSO, HERRAMIENTA_VALIDAR_FECHA,
     HERRAMIENTA_PROPONER_INICIO, HERRAMIENTA_VALIDAR_HORARIO, HERRAMIENTA_CONFIRMAR_DATO,
     HERRAMIENTA_VALIDAR_DNI, HERRAMIENTA_ANADIR_ALUMNO, HERRAMIENTA_TERMINAR_ALUMNOS,
     HERRAMIENTA_MARCAR_PROFESOR_GENERAL, HERRAMIENTA_ANADIR_EXCEPCION_PROFESOR,
@@ -982,12 +950,6 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
         if guardado:
             return {"tipo_guardado": True, "tipo": tipo}
         return {"tipo_guardado": False, "motivo": f"Valor no vàlid: {tipo!r}. Usa 'mercancias' o 'viatgers'."}
-    if nombre == "validar_plan_horas":
-        asignaturas = argumentos["asignaturas"]
-        return {
-            "total": validar_total(asignaturas),
-            "asignaturas": validar_asignaturas(asignaturas)
-        }
     if nombre == "validar_fecha":
         return parsear_fecha(argumentos["fecha"])
     if nombre == "proponer_inicio":
