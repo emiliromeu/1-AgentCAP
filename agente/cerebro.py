@@ -1,12 +1,10 @@
 # Bucle principal del agente: recibe el mensaje de la usuaria, decide qué herramienta llamar y devuelve la respuesta.
 
-import os
 import re
 import json
 from decimal import Decimal
 from datetime import date, time, datetime
 from pathlib import Path
-from anthropic import Anthropic
 from dotenv import load_dotenv
 
 _BASE = Path(__file__).resolve().parent.parent  # agente/ → arrel del projecte
@@ -45,7 +43,6 @@ from agente.recogida_profesores import (
 from agente.recogida_practicas import (
     crear_estado as crear_estado_practicas,
     guardar_profesor as guardar_profesor_practicas,
-    marcar_terminado as marcar_terminado_practicas,
     bloque_completo as bloque_completo_practicas,
 )
 from agente.recogida_tipo_curso import (
@@ -55,7 +52,6 @@ from agente.recogida_tipo_curso import (
 )
 from agente.recogida_prueba_fuego import (
     crear_estado as crear_estado_prueba_fuego,
-    marcar_terminado as marcar_terminado_prueba_fuego,
     bloque_completo as bloque_completo_prueba_fuego,
 )
 from herramientas.motor_prueba_fuego import crear_prueba_fuego
@@ -348,18 +344,6 @@ HERRAMIENTA_GUARDAR_PROFESOR_PRACTICAS = {
     }
 }
 
-HERRAMIENTA_TERMINAR_PRACTICAS = {
-    "name": "terminar_practicas",
-    "description": (
-        "Marca que Rosa ha terminado de añadir sesiones de prácticas. Llámala cuando Rosa diga "
-        "que ya están todas las sesiones, o que no hay prácticas. La lista vacía es válida."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {}
-    }
-}
-
 HERRAMIENTA_GUARDAR_PRUEBA_FUEGO = {
     "name": "guardar_prueba_fuego",
     "description": (
@@ -392,26 +376,13 @@ HERRAMIENTA_GUARDAR_PRUEBA_FUEGO = {
     }
 }
 
-HERRAMIENTA_TERMINAR_PRUEBA_FUEGO = {
-    "name": "terminar_prueba_fuego",
-    "description": (
-        "Marca la Prova de Foc com a completada. Llama-la quan les dades estiguin guardades "
-        "i Rosa hagi confirmat que no vol canviar res."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {}
-    }
-}
-
 _HERRAMIENTAS = [
     HERRAMIENTA_GUARDAR_TIPO_CURSO, HERRAMIENTA_VALIDAR_FECHA,
     HERRAMIENTA_PROPONER_INICIO, HERRAMIENTA_VALIDAR_HORARIO, HERRAMIENTA_CONFIRMAR_DATO,
     HERRAMIENTA_VALIDAR_DNI, HERRAMIENTA_ANADIR_ALUMNO, HERRAMIENTA_TERMINAR_ALUMNOS,
     HERRAMIENTA_MARCAR_PROFESOR_GENERAL, HERRAMIENTA_ANADIR_EXCEPCION_PROFESOR,
     HERRAMIENTA_TERMINAR_PROFESORES, HERRAMIENTA_GUARDAR_PROFESOR_PRACTICAS,
-    HERRAMIENTA_TERMINAR_PRACTICAS, HERRAMIENTA_GUARDAR_PRUEBA_FUEGO,
-    HERRAMIENTA_TERMINAR_PRUEBA_FUEGO,
+    HERRAMIENTA_GUARDAR_PRUEBA_FUEGO,
 ]
 
 # Tools de validación pura (sin efectos secundarios): siempre disponibles, en cualquier bloque.
@@ -423,12 +394,12 @@ _VALIDACIONES_GLOBALES = {"validar_fecha", "validar_dni", "validar_horario", "pr
 _TOOLS_POR_BLOQUE = {
     "tipo_curso":   {"guardar_tipo_curso"},
     "calendario":   {"confirmar_dato"},
-    "prueba_fuego": {"guardar_prueba_fuego", "terminar_prueba_fuego"},
+    "prueba_fuego": {"guardar_prueba_fuego"},
     "franjas":      {"confirmar_dato"},
     "orden":        {"confirmar_dato"},
     "alumnos":      {"anadir_alumno", "terminar_alumnos"},
     "profesores":   {"marcar_profesor_general", "anadir_excepcion_profesor", "terminar_profesores"},
-    "practicas":    {"guardar_profesor_practicas", "terminar_practicas"},
+    "practicas":    {"guardar_profesor_practicas"},
 }
 
 
@@ -1178,12 +1149,6 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
             return {"profesor_guardado": False, "motivo": motivo}
         guardar_profesor_practicas(estados["practicas"], argumentos["profesor"])
         return {"profesor_guardado": True, "profesor": argumentos["profesor"]}
-    if nombre == "terminar_practicas":
-        motivo = _fuera_de_turno("practicas", bloque_actual)
-        if motivo:
-            return {"terminado": False, "motivo": motivo}
-        marcar_terminado_practicas(estados["practicas"])
-        return {"terminado": True, "profesor": estados["practicas"]["profesor"]}
     if nombre == "guardar_prueba_fuego":
         print(f"[DEBUG-PF] guardar_prueba_fuego LLAMADA: argumentos={argumentos} bloque_actual={bloque_actual!r}")
         motivo = _fuera_de_turno("prueba_fuego", bloque_actual)
@@ -1256,44 +1221,7 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
             "falta_fecha": falta_fecha,
             "falta_hora":  falta_hora,
         }
-    if nombre == "terminar_prueba_fuego":
-        motivo = _fuera_de_turno("prueba_fuego", bloque_actual)
-        if motivo:
-            return {"terminado": False, "motivo": motivo}
-        marcar_terminado_prueba_fuego(estados["prueba_fuego"])
-        pf = estados["prueba_fuego"]
-        return {
-            "terminado":   True,
-            "fecha":       pf["fecha"].strftime("%d/%m/%Y") if pf["fecha"] else None,
-            "hora_inicio": pf["hora_inicio"].strftime("%H:%M") if pf["hora_inicio"] else None,
-            "proveedor":   pf["proveedor"],
-        }
     return {"error": f"Herramienta desconocida: {nombre}"}
-
-
-_DIAS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-
-
-def _imprimir_horario(horario):
-    """Muestra el horario detallado por consola de forma legible."""
-    ANCHO = 60
-    print("\n" + "=" * ANCHO)
-    print("  HORARI CAP — MERCADERIES")
-    print("=" * ANCHO)
-    for dia_info in horario:
-        dia     = dia_info["dia"]
-        nom_dia = _DIAS_ES[dia.weekday()].upper()
-        print(f"\n  {nom_dia}  {dia.strftime('%d/%m/%Y')}")
-        print(f"  {'─' * (ANCHO - 2)}")
-        for tramo in dia_info["tramos"]:
-            h_ini = tramo["inicio"].strftime("%H:%M")
-            h_fin = tramo["fin"].strftime("%H:%M")
-            if tramo["tipo"] == "descanso":
-                print(f"  {h_ini}–{h_fin}  ── descans ──")
-            else:
-                codigo = f"[{tramo['codigo']}]"
-                print(f"  {h_ini}–{h_fin}  {codigo:<12}  {tramo['nombre']}")
-    print("\n" + "=" * ANCHO)
 
 
 def crear_estado_conversacion():
@@ -1405,12 +1333,22 @@ def avanzar_o_generar(estados, bloque_actual):
     }
 
 
+_NUDGE_CONTINUAR = (
+    "[El paso anterior se ha cerrado. Continúa con el siguiente paso "
+    "según el estado actual — Rosa no ha escrito nada nuevo.]"
+)
+
+
 def procesar_turno(entrada, estado_conversacion, client):
     """
     Processa un torn de la conversa per a la UI de Streamlit.
 
     Paràmetres:
-        entrada             : str  — missatge de Rosa
+        entrada             : str | None — missatge de Rosa, o None per demanar que
+                               l'agent continuï tot sol (s'usa quan un bloc de llista
+                               oberta es tanca amb el botó de la interfície, sense
+                               que Rosa hagi escrit res — així l'agent fa la següent
+                               pregunta automàticament en comptes de quedar-se mut).
         estado_conversacion : dict — {"llm_messages", "estados", "bloque_actual"}
         client              : Anthropic — creat i cachejat a l'exterior
 
@@ -1426,7 +1364,7 @@ def procesar_turno(entrada, estado_conversacion, client):
     estados       = estado_conversacion["estados"]
     bloque_actual = estado_conversacion["bloque_actual"]
 
-    messages.append({"role": "user", "content": entrada})
+    messages.append({"role": "user", "content": entrada if entrada is not None else _NUDGE_CONTINUAR})
 
     respuesta_text = ""
     terminado      = False
@@ -1504,143 +1442,3 @@ def procesar_turno(entrada, estado_conversacion, client):
     }
 
 
-def iniciar_agente():
-    """Arranca el bucle conversacional en la consola."""
-    client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    messages = []                          # historial completo de la conversación
-    estados = {b["nombre"]: b["crear_estado"]() for b in BLOQUES}
-    estado         = estados["calendario"]
-    estado_franjas = estados["franjas"]
-    estado_orden   = estados["orden"]
-    bloque_actual = "tipo_curso"             # empieza por el tipo de curso
-
-    print("Hola, soy el asistente CAP. Escribe 'salir' para terminar.\n")
-
-    while True:
-        entrada = input("Tú: ").strip()
-
-        if entrada.lower() == "salir":
-            print("¡Hasta pronto, Rosa!")
-            break
-
-        if not entrada:
-            continue
-
-        messages.append({"role": "user", "content": entrada})
-
-        # Bucle interno: continúa mientras el modelo quiera usar herramientas
-        _tools_cached = _HERRAMIENTAS[:-1] + [{**_HERRAMIENTAS[-1], "cache_control": {"type": "ephemeral"}}]
-        while True:
-            system_blocks = [
-                {"type": "text", "text": SYSTEM_PROMPT,
-                 "cache_control": {"type": "ephemeral"}},
-                {"type": "text", "text": _construir_contexto_estado(bloque_actual, estados)},
-            ]
-
-            respuesta = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=4096,
-                system=system_blocks,
-                tools=_tools_cached,
-                messages=messages
-            )
-            u = respuesta.usage
-            cache_write = getattr(u, "cache_creation_input_tokens", 0) or 0
-            cache_read  = getattr(u, "cache_read_input_tokens",     0) or 0
-            print(
-                f"[TOKENS] bloc={bloque_actual}"
-                f" input={u.input_tokens} output={u.output_tokens}"
-                f" cache_write={cache_write} cache_read={cache_read}"
-                f" stop={respuesta.stop_reason}"
-            )
-
-            if respuesta.stop_reason == "tool_use":
-                # Añadimos la respuesta del asistente al historial (incluye el bloque tool_use)
-                messages.append({"role": "assistant", "content": respuesta.content})
-
-                # Ejecutamos cada herramienta solicitada y recogemos los resultados
-                resultados = []
-                for bloque in respuesta.content:
-                    if bloque.type == "tool_use":
-                        resultado = _ejecutar_herramienta(bloque.name, bloque.input, estados, bloque_actual)
-                        resultados.append({
-                            "type": "tool_result",
-                            "tool_use_id": bloque.id,
-                            "content": json.dumps(resultado, ensure_ascii=False, cls=_DecimalEncoder)
-                        })
-
-                # Devolvemos los resultados al modelo como mensaje de usuario
-                messages.append({"role": "user", "content": resultados})
-
-                # Transició de bloc: si l'actual s'ha completat, avança al següent saltant
-                # els blocs condicionals que no apliquen; si s'exhaureixen, genera l'horari
-                bloque_actual_def = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
-                if bloque_actual_def["bloque_completo"](estados[bloque_actual]):
-                    idx = BLOQUES.index(bloque_actual_def)
-                    siguiente_idx = idx + 1
-                    while siguiente_idx < len(BLOQUES):
-                        bloque_sig = BLOQUES[siguiente_idx]
-                        condicion  = bloque_sig.get("condicion")
-                        # Salta blocs que no apliquen (condició falsa) o que ja estan complets
-                        if condicion is not None and not condicion(estados):
-                            siguiente_idx += 1
-                            continue
-                        if bloque_sig["bloque_completo"](estados[bloque_sig["nombre"]]):
-                            siguiente_idx += 1
-                            continue
-                        break
-                    if siguiente_idx < len(BLOQUES):
-                        bloque_actual = BLOQUES[siguiente_idx]["nombre"]
-                    else:
-                        pf_estado = estados["prueba_fuego"]
-                        pf = None
-                        if (estados["tipo_curso"]["tipo_curso"] == "mercancias" and
-                                pf_estado["fecha"] is not None):
-                            pf = crear_prueba_fuego(
-                                pf_estado["fecha"],
-                                pf_estado["hora_inicio"],
-                                pf_estado["proveedor"],
-                            )
-                        resultado = generar_horario(
-                            estado, estado_franjas, estado_orden,
-                            tipo_curso=estados["tipo_curso"]["tipo_curso"],
-                            prueba_fuego=pf,
-                        )
-                        _imprimir_horario(resultado["horario"])
-                        if resultado["pendientes"]:
-                            codigos = ", ".join(resultado["pendientes"])
-                            print(
-                                f"\n⚠ ATENCIÓ: l'horari està INCOMPLET. "
-                                f"Les matèries {codigos} no han pogut col·locar-se perquè "
-                                f"no hi ha prou dies lectius entre la data d'inici i el dia groc. "
-                                f"Per solucionar-ho, avança la data d'inici del curs o "
-                                f"amplia el rang de dates."
-                            )
-                        horari_amb_professors = aplicar_profesores(
-                            resultado["horario"], estados["profesores"]
-                        )
-                        ruta = generar_document(
-                            horari_amb_professors,
-                            str(_BASE / "output_cap.docx"),
-                            estado_alumnos=estados["alumnos"],
-                            estado_practicas=estados["practicas"],
-                            estado_calendario=estados["calendario"],
-                            estado_franjas=estados["franjas"],
-                            tipo_curso=estados["tipo_curso"]["tipo_curso"],
-                        )
-                        print(f"\nDocument generat: {ruta}")
-                        print("Aquí tens l'horari generat. Fins aviat, Rosa!")
-                        return
-
-            else:
-                # stop_reason == "end_turn": el modelo ha terminado, mostramos la respuesta
-                for bloque in respuesta.content:
-                    if hasattr(bloque, "text"):
-                        print(f"\nAsistente: {bloque.text}\n")
-
-                messages.append({"role": "assistant", "content": respuesta.content})
-                break  # Salimos del bucle interno y esperamos el siguiente input de Rosa
-
-
-if __name__ == "__main__":
-    iniciar_agente()

@@ -168,7 +168,7 @@ def _init_limpio():
     st.session_state.recuperant    = False   # flag: mostrant el diàleg de recuperació
 
 
-def _cerrar_lista_abierta(nombre_bloque, marcar_terminado_fn, mensaje_chat):
+def _cerrar_lista_abierta(nombre_bloque, marcar_terminado_fn, mensaje_chat, client):
     """
     Cierra por código (sin pasar por el LLM) un bloque de lista abierta
     (alumnos o profesores) cuando Rosa pulsa el botón correspondiente.
@@ -176,6 +176,10 @@ def _cerrar_lista_abierta(nombre_bloque, marcar_terminado_fn, mensaje_chat):
     Marca el bloque como terminado, avanza al siguiente bloque pendiente o
     genera el documento si era el último, añade el mensaje de confirmación
     al chat, persiste el estado y recarga la página.
+
+    Si se avanzó a un bloque nuevo (no se generó el documento), pide además
+    al agente que haga la siguiente pregunta automáticamente — si no, Rosa se
+    quedaría esperando una respuesta que nunca llega hasta que ella escriba algo.
     """
     estados = st.session_state.conv_state["estados"]
     marcar_terminado_fn(estados[nombre_bloque])
@@ -191,6 +195,19 @@ def _cerrar_lista_abierta(nombre_bloque, marcar_terminado_fn, mensaje_chat):
         st.session_state.chat_messages.append(
             {"role": "assistant", "content": resultado["respuesta_text"]}
         )
+    elif resultado["avanzo"]:
+        # Bloque nuevo activo (p.ej. alumnos -> profesores): el agente pregunta
+        # solo, sin esperar a que Rosa escriba nada.
+        with st.spinner("Pensando…"):
+            resultado_llm = procesar_turno(None, st.session_state.conv_state, client)
+        st.session_state.conv_state = resultado_llm["estado"]
+        if resultado_llm["terminado"]:
+            st.session_state.terminado = True
+            st.session_state.ruta_docx = resultado_llm["ruta_docx"]
+        if resultado_llm["respuesta"]:
+            st.session_state.chat_messages.append(
+                {"role": "assistant", "content": resultado_llm["respuesta"]}
+            )
 
     conv_amb_xat = {
         **st.session_state.conv_state,
@@ -285,6 +302,7 @@ if not st.session_state.terminado:
             _cerrar_lista_abierta(
                 "alumnos", marcar_terminado_alumnos,
                 "¡Perfecto! Ya tengo todos los alumnos apuntados.",
+                get_client(),
             )
         st.caption(
             "Pulsa aquí cuando hayas metido a todos los alumnos del curso "
@@ -296,6 +314,7 @@ if not st.session_state.terminado:
             _cerrar_lista_abierta(
                 "profesores", marcar_terminado_profesores,
                 "¡Perfecto! Ya tengo anotados los profesores que dan las clases.",
+                get_client(),
             )
         st.caption(
             "Pulsa aquí si el profesor general da todas las clases, "

@@ -6,8 +6,8 @@
 # Estado:
 #   profesor  : str | None  — nombre del profesor, hasta que Rosa lo indique.
 #                             El bloque se completa en cuanto profesor deja de ser None.
-#   terminado : bool        — informativo (marcado por terminar_practicas si el LLM la llama),
-#                             ya no condiciona la completitud del bloque.
+#   terminado : bool        — sin uso actualmente (la tool que lo marcaba se eliminó);
+#                             no condiciona la completitud del bloque.
 
 
 def crear_estado():
