@@ -262,9 +262,23 @@ for msg in st.session_state.chat_messages:
 # ── Botons "cerrar lista" per als blocs d'alumnes i professors ───────────────
 # Via de tancament fiable, per codi, que no depèn que el LLM cridi
 # terminar_alumnos / terminar_profesores.
+
+# [DEBUG-BOTON] rastro temporal: qué ve este render en cada rerun de Streamlit
+print(
+    f"[DEBUG-BOTON] render: terminado={st.session_state.terminado!r} "
+    f"bloque_actual={st.session_state.conv_state.get('bloque_actual')!r}"
+)
+
 if not st.session_state.terminado:
     _bloque_actual = st.session_state.conv_state["bloque_actual"]
     _estados       = st.session_state.conv_state["estados"]
+    print(
+        f"[DEBUG-BOTON]   _bloque_actual={_bloque_actual!r} "
+        f"es_alumnos={_bloque_actual == 'alumnos'!r} "
+        f"es_profesores={_bloque_actual == 'profesores'!r}"
+    )
+    if _bloque_actual == "profesores":
+        print(f"[DEBUG-BOTON]   profesor_general={_estados['profesores']['profesor_general']!r}")
 
     if _bloque_actual == "alumnos":
         if st.button("✅ Ya he añadido todos los alumnos", use_container_width=True):

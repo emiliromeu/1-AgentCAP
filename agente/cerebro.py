@@ -867,11 +867,11 @@ def _contexto_prueba_fuego(estado_pf):
         "",
         "Cuando Rosa dé los datos, llama a guardar_prueba_fuego con fecha (DD/MM/AAAA) y",
         "hora_inicio (HH:MM). Pasa 'proveedor' solo si Rosa indicó uno distinto.",
+        "Esa llamada por sí sola completa este paso — el sistema avanza automáticamente,",
+        "no hace falta ninguna otra llamada después.",
         "",
         "Si el sistema devuelve error (no es sábado o fuera del curso), explícaselo a Rosa",
         "y pide que corrija la fecha.",
-        "",
-        "Cuando los datos estén guardados, llama a terminar_prueba_fuego.",
     ]))
     return "\n".join(lineas)
 
@@ -976,9 +976,29 @@ def _construir_contexto_estado(bloque_actual, estados):
     return bloque["contexto"](estados[bloque_actual])
 
 
+def _fuera_de_turno(nombre_bloque_tool, bloque_actual):
+    """
+    Devuelve un mensaje de rechazo si esta tool no pertenece al bloque activo,
+    o None si sí coincide (vía libre).
+
+    Evita que un bloque se complete "fuera de turno" (por ejemplo, guardar un
+    alumno mientras el paso activo real sigue siendo prueba_fuego), que dejaba
+    bloque_actual congelado sin que el estado interno reflejara lo mismo.
+    """
+    if bloque_actual == nombre_bloque_tool:
+        return None
+    return (
+        f"Esto pertenece al paso '{nombre_bloque_tool}', pero ahora mismo el paso "
+        f"activo es '{bloque_actual}'. Termina primero el paso actual antes de continuar."
+    )
+
+
 def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
     """Despacha la llamada a la función Python real y devuelve el resultado como dict."""
     if nombre == "guardar_tipo_curso":
+        motivo = _fuera_de_turno("tipo_curso", bloque_actual)
+        if motivo:
+            return {"tipo_guardado": False, "motivo": motivo}
         tipo = argumentos["tipo_curso"]
         guardado = guardar_tipo_curso_tc(estados["tipo_curso"], tipo)
         if guardado:
@@ -994,6 +1014,19 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
         nombre_dato   = argumentos["nombre_dato"]
         valor         = argumentos["valor"]
         bloque_def    = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
+        # nombre_dato pertenece a un bloque concreto (p. ej. "dia_amarillo" es de calendario).
+        # Si bloque_actual no es el dueño de ese dato, rechazamos con mensaje claro en vez
+        # de dejar que reviente más abajo (marcar_conseguido=None o estado_bloque[nombre_dato]
+        # inexistente).
+        if bloque_def["marcar_conseguido"] is None or nombre_dato not in estados[bloque_actual]:
+            return {
+                "guardado": False,
+                "nombre_dato": nombre_dato,
+                "motivo": (
+                    f"'{nombre_dato}' no pertenece al paso activo ('{bloque_actual}'). "
+                    "Comprueba qué paso toca ahora y confirma el dato correcto."
+                ),
+            }
         estado_bloque = estados[bloque_actual]
         # Franges horàries: el valor SEMPRE ha de ser {"inicio": "HH:MM", "fin": "HH:MM"}.
         # El LLM a vegades confon els noms amb els paràmetres de validar_horario
@@ -1042,6 +1075,9 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
     if nombre == "validar_dni":
         return validar_documento(argumentos["documento"])
     if nombre == "anadir_alumno":
+        motivo = _fuera_de_turno("alumnos", bloque_actual)
+        if motivo:
+            return {"añadido": False, "motivo": motivo}
         # Doble candado: revalidamos antes de añadir aunque el LLM ya haya llamado validar_dni
         validacion = validar_documento(argumentos["documento"])
         if not validacion["valido"]:
@@ -1050,12 +1086,21 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
         anadir_alumno_alumnos(estados["alumnos"], argumentos["nombre"], doc_limpio, argumentos["tipo_curso"])
         return {"añadido": True, "nombre": argumentos["nombre"], "documento": doc_limpio, "tipo_curso": argumentos["tipo_curso"]}
     if nombre == "terminar_alumnos":
+        motivo = _fuera_de_turno("alumnos", bloque_actual)
+        if motivo:
+            return {"terminado": False, "motivo": motivo}
         marcar_terminado_alumnos(estados["alumnos"])
         return {"terminado": True, "total_alumnos": len(estados["alumnos"]["alumnos"])}
     if nombre == "marcar_profesor_general":
+        motivo = _fuera_de_turno("profesores", bloque_actual)
+        if motivo:
+            return {"guardado": False, "motivo": motivo}
         marcar_profesor_general_profesores(estados["profesores"], argumentos["nombre"])
         return {"guardado": True, "profesor_general": argumentos["nombre"]}
     if nombre == "anadir_excepcion_profesor":
+        motivo = _fuera_de_turno("profesores", bloque_actual)
+        if motivo:
+            return {"añadida": False, "motivo": motivo}
         # Doble candado: validamos la fecha antes de añadir
         resultado_fecha = parsear_fecha(argumentos["fecha"])
         if not resultado_fecha["valida"]:
@@ -1063,16 +1108,28 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
         anadir_excepcion_profesores(estados["profesores"], argumentos["fecha"], argumentos["profesor"])
         return {"añadida": True, "fecha": argumentos["fecha"], "profesor": argumentos["profesor"]}
     if nombre == "terminar_profesores":
+        motivo = _fuera_de_turno("profesores", bloque_actual)
+        if motivo:
+            return {"terminado": False, "motivo": motivo}
         marcar_terminado_profesores(estados["profesores"])
         n = len(estados["profesores"]["excepciones"])
         return {"terminado": True, "total_excepciones": n}
     if nombre == "guardar_profesor_practicas":
+        motivo = _fuera_de_turno("practicas", bloque_actual)
+        if motivo:
+            return {"profesor_guardado": False, "motivo": motivo}
         guardar_profesor_practicas(estados["practicas"], argumentos["profesor"])
         return {"profesor_guardado": True, "profesor": argumentos["profesor"]}
     if nombre == "terminar_practicas":
+        motivo = _fuera_de_turno("practicas", bloque_actual)
+        if motivo:
+            return {"terminado": False, "motivo": motivo}
         marcar_terminado_practicas(estados["practicas"])
         return {"terminado": True, "profesor": estados["practicas"]["profesor"]}
     if nombre == "guardar_prueba_fuego":
+        motivo = _fuera_de_turno("prueba_fuego", bloque_actual)
+        if motivo:
+            return {"guardado": False, "motivo": motivo}
         fecha_str     = argumentos["fecha"]
         hora_str      = argumentos["hora_inicio"]
         proveedor_arg = argumentos.get("proveedor")
@@ -1110,6 +1167,9 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
             "proveedor":   estados["prueba_fuego"]["proveedor"],
         }
     if nombre == "terminar_prueba_fuego":
+        motivo = _fuera_de_turno("prueba_fuego", bloque_actual)
+        if motivo:
+            return {"terminado": False, "motivo": motivo}
         marcar_terminado_prueba_fuego(estados["prueba_fuego"])
         pf = estados["prueba_fuego"]
         return {
