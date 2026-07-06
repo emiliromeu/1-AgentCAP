@@ -5,7 +5,9 @@
 #
 # Estado:
 #   profesor  : str | None  — nombre del profesor, hasta que Rosa lo indique.
-#   terminado : bool        — True cuando Rosa ha confirmado el profesor.
+#                             El bloque se completa en cuanto profesor deja de ser None.
+#   terminado : bool        — informativo (marcado por terminar_practicas si el LLM la llama),
+#                             ya no condiciona la completitud del bloque.
 
 
 def crear_estado():
@@ -27,5 +29,5 @@ def marcar_terminado(estado):
 
 
 def bloque_completo(estado):
-    """True si el profesor está recogido y Rosa ha confirmado."""
-    return estado["terminado"] and estado["profesor"] is not None
+    """True en cuanto el profesor está recogido (igual que prueba_fuego con fecha/hora)."""
+    return estado["profesor"] is not None

@@ -732,11 +732,7 @@ def _verificar_coherencia(nombre_dato, valor, estados):
 
 def _contexto_practicas(estado_practicas):
     """Genera la parte variable del system prompt para el bloque prácticas."""
-    profesor  = estado_practicas["profesor"]
-    terminado = estado_practicas["terminado"]
-
-    if terminado:
-        return f"PRÁCTICAS: COMPLETADO (profesor: {profesor})."
+    profesor = estado_practicas["profesor"]
 
     lineas = ["ESTADO DE LA RECOGIDA DE PRÁCTICAS:"]
     if profesor is None:
@@ -753,14 +749,12 @@ def _contexto_practicas(estado_practicas):
         "\n"
         "Pide a Rosa el nombre del profesor de prácticas.\n"
         "Cuando Rosa te lo dé, repíteselo para confirmar.\n"
-        "Cuando confirme, llama a guardar_profesor_practicas con ese nombre.\n"
-        "Luego llama a terminar_practicas.\n"
         "\n"
         "*** IMPORTANTE — ESTE ES EL ÚLTIMO PASO ***\n"
-        "Llamar a terminar_practicas es lo que GENERA EL DOCUMENTO .docx con el horario\n"
-        "completo del CAP. Tras esa llamada, el sistema produce el fichero automáticamente\n"
-        "y Rosa verá un botón de descarga en la pantalla.\n"
-        "Después de llamar a terminar_practicas, dile a Rosa:\n"
+        "Cuando Rosa confirme, llama a guardar_profesor_practicas con ese nombre.\n"
+        "Esa llamada GENERA AUTOMÁTICAMENTE el documento .docx con el horario completo\n"
+        "del CAP — el sistema lo hace solo, en cuanto guardas el profesor.\n"
+        "Tras esa llamada, dile a Rosa:\n"
         "  '¡Listo! El horario está generado. Puedes descargarlo con el botón de abajo.'"
     )
 
@@ -1179,19 +1173,12 @@ def procesar_turno(entrada, estado_conversacion, client):
         if resposta.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": resposta.content})
 
-            # [DEBUG-TRAZA] texto descartado que acompaña a la(s) tool_use de esta respuesta
-            _texto_descartado = "".join(b.text for b in resposta.content if hasattr(b, "text"))
-            if _texto_descartado:
-                print(f"[DEBUG-TRAZA] TEXTO DESCARTADO (bloc={bloque_actual}): {_texto_descartado!r}")
-
             resultats = []
             for bloque in resposta.content:
                 if bloque.type == "tool_use":
-                    print(f"[DEBUG-TRAZA] TOOL LLAMADA: {bloque.name} args={bloque.input}")
                     resultat = _ejecutar_herramienta(
                         bloque.name, bloque.input, estados, bloque_actual
                     )
-                    print(f"[DEBUG-TRAZA] TOOL RESULTADO: {bloque.name} -> {resultat}")
                     resultats.append({
                         "type":        "tool_result",
                         "tool_use_id": bloque.id,
@@ -1201,11 +1188,6 @@ def procesar_turno(entrada, estado_conversacion, client):
             messages.append({"role": "user", "content": resultats})
 
             bloque_actual_def = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
-            print(
-                f"[DEBUG-TRAZA] bloque_actual={bloque_actual} "
-                f"bloque_completo={bloque_actual_def['bloque_completo'](estados[bloque_actual])} "
-                f"estado_practicas={estados.get('practicas')}"
-            )
             if bloque_actual_def["bloque_completo"](estados[bloque_actual]):
                 idx           = BLOQUES.index(bloque_actual_def)
                 siguiente_idx = idx + 1
@@ -1224,7 +1206,6 @@ def procesar_turno(entrada, estado_conversacion, client):
                 if siguiente_idx < len(BLOQUES):
                     bloque_actual = BLOQUES[siguiente_idx]["nombre"]
                 else:
-                    print("[DEBUG-TRAZA] >>> ENTRANDO EN RAMA DE GENERACIÓN DE DOCUMENTO <<<")
                     pf_estat = estados["prueba_fuego"]
                     pf = None
                     if (estados["tipo_curso"]["tipo_curso"] == "mercancias"
@@ -1246,7 +1227,6 @@ def procesar_turno(entrada, estado_conversacion, client):
                         estado_franjas=estados["franjas"],
                         tipo_curso=estados["tipo_curso"]["tipo_curso"],
                     )
-                    print(f"[DEBUG-TRAZA] documento generado, ruta_docx={ruta_docx!r}")
                     respuesta_text = (
                         "¡Perfecto! Ya tengo todos los datos. "
                         "He generado el horario completo. "
@@ -1260,8 +1240,6 @@ def procesar_turno(entrada, estado_conversacion, client):
                 if hasattr(bloc, "text"):
                     respuesta_text += bloc.text
             messages.append({"role": "assistant", "content": resposta.content})
-            print(f"[DEBUG-TRAZA] END_TURN texto mostrado a Rosa: {respuesta_text!r}")
-            print(f"[DEBUG-TRAZA] al salir por end_turn: terminado={terminado} ruta_docx={ruta_docx!r}")
             break
 
     return {
