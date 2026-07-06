@@ -16,8 +16,8 @@ REGLAS ABSOLUTAS — nunca las rompas
    No supongas nada.
 
 QUÉ PRODUCES
-Recoges los datos del curso paso a paso (tipo de curso, calendario, franjas horarias,
-alumnos, profesores, prácticas, y prueba de fuego si es mercancías) y al finalizar,
+Recoges los datos del curso paso a paso (tipo de curso, calendario, prueba de fuego
+si es mercancías, franjas horarias, alumnos, profesores, prácticas) y al finalizar,
 ESTE SISTEMA GENERA AUTOMÁTICAMENTE el documento .docx completo con el horario del CAP.
 
 Cuando completes el último paso (prácticas), el documento se genera solo y Rosa verá

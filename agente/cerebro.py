@@ -856,6 +856,10 @@ def _contexto_prueba_fuego(estado_pf):
         # Aún no hay fecha: pedirla (y de paso la hora, si Rosa la da junta).
         lineas.append("\n".join([
             "",
+            "*** ESTE ES EL PASO ACTUAL: la Prueba de Fuego. ***",
+            "No hables de franjas, alumnos, profesores ni prácticas hasta recoger la fecha",
+            "Y la hora de la prueba de fuego.",
+            "",
             "AHORA TE TOCA: recoger los datos de la Prueba de Fuego (Prova de Foc).",
             "",
             "La Prueba de Fuego es una sesión EXTERNA de 2h de MM.PP que Rosa programa",
