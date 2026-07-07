@@ -1000,8 +1000,9 @@ def _contexto_ajustar_inicio(estados):
     return "\n".join([
         "=== BLOQUE ACTUAL: AJUSTAR FECHA DE INICIO (faltan horas para completar el curso) ===",
         "",
-        "*** ESTE ES EL PASO ACTUAL. No hables de alumnos, profesores ni prácticas hasta",
-        "resolver esto. ***",
+        "*** ESTE ES EL PASO ACTUAL. NO preguntes por alumnos, profesores, prácticas ni nada",
+        f"más. Tu única tarea ahora: proponle a Rosa la fecha {nueva_fecha_str} y esperar su",
+        "respuesta. No avances a ningún otro tema hasta que esto quede resuelto. ***",
         "",
         "El SISTEMA (no tú) ya ha calculado estos datos — no tienes que calcular nada:",
         f"  - Horas que faltan para completar el curso (130h): {horas_faltantes:.1f}h",
@@ -1659,6 +1660,16 @@ def procesar_turno(entrada, estado_conversacion, client):
         # y solo se ofrecen al LLM las tools del bloque activo en ese momento.
         tools_turno = _herramientas_para_bloque(bloque_actual)
 
+        # [DEBUG-AJUSTE-LLM] logging temporal: qué recibe REALMENTE el LLM cuando
+        # bloque_actual == "ajustar_inicio". Quitar una vez diagnosticado.
+        if bloque_actual == "ajustar_inicio":
+            print("[DEBUG-AJUSTE-LLM] ══════ ANTES de client.messages.create ══════")
+            print(f"[DEBUG-AJUSTE-LLM] SYSTEM_PROMPT contiene 'ajuste de la fecha de inicio': "
+                  f"{'ajuste de la fecha de inicio' in SYSTEM_PROMPT}")
+            print(f"[DEBUG-AJUSTE-LLM] SYSTEM_PROMPT completo:\n{SYSTEM_PROMPT}")
+            print(f"[DEBUG-AJUSTE-LLM] tools enviadas: {[t['name'] for t in tools_turno]}")
+            print(f"[DEBUG-AJUSTE-LLM] contexto de bloque enviado:\n{system_blocks[1]['text']}")
+
         resposta = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=4096,
@@ -1666,6 +1677,17 @@ def procesar_turno(entrada, estado_conversacion, client):
             tools=tools_turno,
             messages=messages,
         )
+
+        if bloque_actual == "ajustar_inicio":
+            print("[DEBUG-AJUSTE-LLM] ══════ DESPUÉS de client.messages.create ══════")
+            print(f"[DEBUG-AJUSTE-LLM] stop_reason: {resposta.stop_reason}")
+            for bloque_resp in resposta.content:
+                if bloque_resp.type == "tool_use":
+                    print(f"[DEBUG-AJUSTE-LLM] LLAMÓ A TOOL: {bloque_resp.name} con input={bloque_resp.input}")
+                elif hasattr(bloque_resp, "text"):
+                    print(f"[DEBUG-AJUSTE-LLM] TEXTO DE RESPUESTA: {bloque_resp.text!r}")
+            print("[DEBUG-AJUSTE-LLM] ══════════════════════════════════════════════")
+
         u = resposta.usage
         cache_write = getattr(u, "cache_creation_input_tokens", 0) or 0
         cache_read  = getattr(u, "cache_read_input_tokens",     0) or 0
