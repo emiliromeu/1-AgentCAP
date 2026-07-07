@@ -347,10 +347,10 @@ if st.session_state.terminado:
         st.rerun()
 
     # Scroll automático al fondo, SOLO la primera vez que se muestra el resultado
-    # final — aislado en su propio iframe (components.v1.html) para que, si algo
+    # final — aislado en su propio iframe (components.html) para que, si algo
     # falla, se quede contenido ahí y nunca afecte al resto de la app.
     if not st.session_state.get("scroll_hecho", False):
-        components.v1.html(
+        components.html(
             """
             <script>
             try {
