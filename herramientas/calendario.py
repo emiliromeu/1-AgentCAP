@@ -166,6 +166,31 @@ def es_dia_valido(fecha, dia_amarillo, festivos):
     }
 
 
+def validar_inicio_no_domingo(fecha_inicio_texto):
+    """
+    Comprueba que la fecha de inicio del curso no caiga en domingo (no hay clases ese día).
+
+    Devuelve:
+        {'coherente': True,  'mensaje': <str>}  si no es domingo
+        {'coherente': False, 'mensaje': <str>}  si es domingo
+    """
+    inicio = parsear_fecha(fecha_inicio_texto)["fecha"]
+
+    if inicio.weekday() == 6:
+        return {
+            "coherente": False,
+            "mensaje": (
+                "El curso no puede empezar en domingo, no hay clases. "
+                "¿Qué otro día prefieres?"
+            ),
+        }
+
+    return {
+        "coherente": True,
+        "mensaje": f"{inicio.strftime(_FORMATO)} no es domingo. Correcto.",
+    }
+
+
 def validar_inicio_antes_amarillo(fecha_inicio_texto, dia_amarillo_texto):
     """
     Comprueba que la fecha de inicio sea estrictamente anterior al día amarillo.

@@ -72,6 +72,7 @@ from herramientas.calendario import (
     parsear_fecha,
     proponer_fecha_inicio,
     validar_inicio_antes_amarillo,
+    validar_inicio_no_domingo,
     validar_verde_despues_amarillo,
 )
 
@@ -784,6 +785,14 @@ def _contexto_alumnos(estado_alumnos):
 
 
 # Tabla de comprobaciones de coherencia entre fechas.
+def _validar_fecha_inicio_calendario(valor, est):
+    """Fecha de inicio: primero que no sea domingo, luego que sea anterior al día amarillo."""
+    r_domingo = validar_inicio_no_domingo(valor)
+    if not r_domingo["coherente"]:
+        return r_domingo
+    return validar_inicio_antes_amarillo(valor, est["dia_amarillo"]["valor"])
+
+
 # Cada entrada: nombre_dato → función que recibe (valor_nuevo, estado) y devuelve
 # el resultado de la comprobación de coherencia (dict con 'coherente' y 'mensaje').
 # Los datos ausentes (dia_amarillo, festivos) no tienen comprobación: se marcan sin más.
@@ -791,9 +800,7 @@ _COMPROBACIONES_COHERENCIA = {
     "dia_verde": lambda valor, est: validar_verde_despues_amarillo(
         valor, est["dia_amarillo"]["valor"]
     ),
-    "fecha_inicio": lambda valor, est: validar_inicio_antes_amarillo(
-        valor, est["dia_amarillo"]["valor"]
-    ),
+    "fecha_inicio": _validar_fecha_inicio_calendario,
 }
 
 
@@ -1362,6 +1369,11 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
                 print(f"[DEBUG-AJUSTE] RECHAZADA por festivo inválido: {f!r} -> {r_f['mensaje']}")
                 return {"aplicado": False, "motivo": f"El festivo '{f}' no es una fecha válida: {r_f['mensaje']}"}
 
+        r_domingo = validar_inicio_no_domingo(nueva_fecha_str)
+        if not r_domingo["coherente"]:
+            print(f"[DEBUG-AJUSTE] RECHAZADA por domingo: {r_domingo['mensaje']}")
+            return {"aplicado": False, "motivo": r_domingo["mensaje"]}
+
         resultado_val = validar_inicio_antes_amarillo(
             nueva_fecha_str, estados["calendario"]["dia_amarillo"]["valor"]
         )
@@ -1486,6 +1498,13 @@ def _proponer_nueva_fecha_inicio(estados, horas_faltantes):
     # Margen: 1 día laborable (lunes-viernes) más — salta sábado/domingo/festivo
     margen = nueva_fecha_sin_margen - timedelta(days=1)
     while margen.weekday() >= 5 or margen in festivos_actuales:  # 5=sábado, 6=domingo
+        margen -= timedelta(days=1)
+
+    # Red de seguridad extra: el curso nunca puede empezar en domingo. El bucle
+    # de arriba ya lo evita (weekday() != 6 al contar días, weekday() >= 5 en el
+    # margen), pero esta guarda deja la garantía explícita e inmune a cualquier
+    # cambio futuro en la lógica de arriba.
+    while margen.weekday() == 6:
         margen -= timedelta(days=1)
 
     return margen, dias_contados
