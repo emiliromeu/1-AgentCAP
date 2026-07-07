@@ -3,7 +3,7 @@
 import re
 import json
 from decimal import Decimal
-from datetime import date, time, datetime
+from datetime import date, time, datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -54,7 +54,15 @@ from agente.recogida_prueba_fuego import (
     crear_estado as crear_estado_prueba_fuego,
     bloque_completo as bloque_completo_prueba_fuego,
 )
+from agente.recogida_ajustar_inicio import (
+    crear_estado as crear_estado_ajustar_inicio,
+    marcar_resuelto as marcar_resuelto_ajustar_inicio,
+    incrementar_intentos as incrementar_intentos_ajustar_inicio,
+    bloque_completo as bloque_completo_ajustar_inicio,
+    LIMITE_INTENTOS as LIMITE_INTENTOS_AJUSTAR_INICIO,
+)
 from herramientas.motor_prueba_fuego import crear_prueba_fuego
+from herramientas.motor_horario import construir_franjas_semanales, horas_clase_de_dia
 from datos.orden_asignaturas import ORDEN_HABITUAL_MERCANCIAS
 from ensamblaje import generar_horario, aplicar_profesores, horas_totales_plantilla, horas_colocadas
 from generar_documento import generar_document
@@ -376,13 +384,44 @@ HERRAMIENTA_GUARDAR_PRUEBA_FUEGO = {
     }
 }
 
+HERRAMIENTA_AJUSTAR_FECHA_INICIO = {
+    "name": "ajustar_fecha_inicio",
+    "description": (
+        "Aplica una nueva fecha de inicio (más temprana que la actual) y los "
+        "festivos del nuevo tramo añadido, para intentar cubrir las horas que "
+        "faltan para completar el curso. Llámala SOLO cuando tengas AMBOS datos: "
+        "la fecha que Rosa haya confirmado (la propuesta u otra) Y su respuesta "
+        "sobre festivos en el nuevo tramo (aunque sea 'ninguno' -> lista vacía). "
+        "No la llames con uno solo de los dos datos."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "nueva_fecha_inicio": {
+                "type": "string",
+                "description": "Nueva fecha de inicio del curso, formato DD/MM/AAAA."
+            },
+            "festivos_nuevos": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Festivos en el tramo NUEVO añadido (entre la nueva fecha y la "
+                    "fecha de inicio anterior), formato DD/MM/AAAA. Lista vacía si "
+                    "Rosa dice que no hay ninguno."
+                )
+            }
+        },
+        "required": ["nueva_fecha_inicio", "festivos_nuevos"]
+    }
+}
+
 _HERRAMIENTAS = [
     HERRAMIENTA_GUARDAR_TIPO_CURSO, HERRAMIENTA_VALIDAR_FECHA,
     HERRAMIENTA_PROPONER_INICIO, HERRAMIENTA_VALIDAR_HORARIO, HERRAMIENTA_CONFIRMAR_DATO,
     HERRAMIENTA_VALIDAR_DNI, HERRAMIENTA_ANADIR_ALUMNO, HERRAMIENTA_TERMINAR_ALUMNOS,
     HERRAMIENTA_MARCAR_PROFESOR_GENERAL, HERRAMIENTA_ANADIR_EXCEPCION_PROFESOR,
     HERRAMIENTA_TERMINAR_PROFESORES, HERRAMIENTA_GUARDAR_PROFESOR_PRACTICAS,
-    HERRAMIENTA_GUARDAR_PRUEBA_FUEGO,
+    HERRAMIENTA_GUARDAR_PRUEBA_FUEGO, HERRAMIENTA_AJUSTAR_FECHA_INICIO,
 ]
 
 # Tools de validación pura (sin efectos secundarios): siempre disponibles, en cualquier bloque.
@@ -392,14 +431,15 @@ _VALIDACIONES_GLOBALES = {"validar_fecha", "validar_dni", "validar_horario", "pr
 # relevantes al bloque activo — así no puede ni intentar actuar sobre un bloque que no toca
 # todavía (refuerza al guard _fuera_de_turno con una barrera estructural, no solo de rechazo).
 _TOOLS_POR_BLOQUE = {
-    "tipo_curso":   {"guardar_tipo_curso"},
-    "calendario":   {"confirmar_dato"},
-    "prueba_fuego": {"guardar_prueba_fuego"},
-    "franjas":      {"confirmar_dato"},
-    "orden":        {"confirmar_dato"},
-    "alumnos":      {"anadir_alumno", "terminar_alumnos"},
-    "profesores":   {"marcar_profesor_general", "anadir_excepcion_profesor", "terminar_profesores"},
-    "practicas":    {"guardar_profesor_practicas"},
+    "tipo_curso":     {"guardar_tipo_curso"},
+    "calendario":     {"confirmar_dato"},
+    "prueba_fuego":   {"guardar_prueba_fuego"},
+    "franjas":        {"confirmar_dato"},
+    "ajustar_inicio": {"ajustar_fecha_inicio"},
+    "orden":          {"confirmar_dato"},
+    "alumnos":        {"anadir_alumno", "terminar_alumnos"},
+    "profesores":     {"marcar_profesor_general", "anadir_excepcion_profesor", "terminar_profesores"},
+    "practicas":      {"guardar_profesor_practicas"},
 }
 
 
@@ -930,6 +970,47 @@ def _contexto_tipo_curso(estado_tipo_curso):
     return f"TIPUS DE CURS: {tipo} (pendent de confirmar)."
 
 
+def _contexto_ajustar_inicio(estados):
+    """
+    Genera la parte variable del system prompt para el bloque "ajustar_inicio".
+
+    A diferencia de los demás _contexto_*, recibe TODOS los estados (ver el
+    caso especial en _construir_contexto_estado) porque necesita calendario +
+    franjas + orden + prueba_fuego para calcular cuántas horas faltan y
+    proponer una fecha.
+    """
+    estado_aj       = estados["ajustar_inicio"]
+    fecha_actual    = estados["calendario"]["fecha_inicio"]["valor"]
+    horas_faltantes = _calcular_horas_faltantes(estados)
+    nueva_fecha, dias_necesarios = _proponer_nueva_fecha_inicio(estados, horas_faltantes)
+
+    return "\n".join([
+        "=== BLOQUE ACTUAL: AJUSTAR FECHA DE INICIO (faltan horas para completar el curso) ===",
+        f"Con el calendario actual, faltan {horas_faltantes:.1f}h para completar el curso (130h).",
+        f"Fecha de inicio actual: {fecha_actual}",
+        f"Fecha propuesta por el sistema: {nueva_fecha.strftime('%d/%m/%Y')} "
+        f"({dias_necesarios} días lectivos más, adelantando el inicio, más 1 día "
+        "laborable de margen para que Rosa pueda organizarse sin agobios).",
+        f"Intentos de ajuste hasta ahora: {estado_aj['intentos']} de {LIMITE_INTENTOS_AJUSTAR_INICIO}.",
+        "",
+        "AHORA TE TOCA (en este orden, con calma, sin tecnicismos):",
+        f"1. Explica a Rosa que con las fechas actuales el curso no completa las horas "
+        f"— faltan {horas_faltantes:.1f} horas — y que hay que adelantar el inicio.",
+        f"2. Propónle la nueva fecha: {nueva_fecha.strftime('%d/%m/%Y')}. Puede aceptarla "
+        "o darte ella otra, siempre que sea igual de temprana o más.",
+        "   Explícale que la fecha ya incluye un día laborable extra de margen, para no ir muy justos.",
+        "3. Pregúntale si hay algún festivo entre esa nueva fecha y la fecha de inicio "
+        f"actual ({fecha_actual}) — son días nuevos que antes no estaban contados. Si no "
+        "hay ninguno, que te lo confirme igualmente (necesitas la respuesta, aunque sea 'ninguno').",
+        "4. Solo cuando tengas AMBOS datos (fecha confirmada + festivos del tramo nuevo, "
+        "aunque sea lista vacía), llama a ajustar_fecha_inicio con nueva_fecha_inicio y festivos_nuevos.",
+        "5. Si el sistema te indica que TODAVÍA faltan horas, vuelve a explicárselo a Rosa "
+        "con la nueva propuesta que te devuelva, y repite desde el paso 2.",
+        "6. Si el sistema te indica que se ha llegado al límite de intentos, dile a Rosa "
+        "exactamente lo que te indique el mensaje — no sigas insistiendo con más propuestas.",
+    ])
+
+
 BLOQUES = [
     {
         "nombre":            "tipo_curso",
@@ -963,6 +1044,17 @@ BLOQUES = [
         "marcar_conseguido": marcar_conseguido_franjas,
         "contexto":          _contexto_franjas,
         "validacion":        None,
+    },
+    {
+        "nombre":            "ajustar_inicio",
+        "crear_estado":      crear_estado_ajustar_inicio,
+        "bloque_completo":   bloque_completo_ajustar_inicio,
+        "marcar_conseguido": None,
+        "contexto":          _contexto_ajustar_inicio,
+        "validacion":        None,
+        # Solo se activa si, con calendario+franjas ya dados, NO dan las horas
+        # para completar el curso (130h). Si dan, se salta y Rosa nunca lo ve.
+        "condicion":         lambda estados: _calcular_horas_faltantes(estados) > 0.01,
     },
     {
         "nombre":            "orden",
@@ -1001,6 +1093,12 @@ BLOQUES = [
 
 def _construir_contexto_estado(bloque_actual, estados):
     """Elige el constructor de contexto según el bloque que está en curso."""
+    # Caso especial: "ajustar_inicio" no recoge un dato propio, sino que ajusta
+    # calendario/franjas ya existentes — necesita ver TODOS los estados (no solo
+    # su porción) para calcular cuántas horas faltan y proponer una fecha. Los
+    # otros 8 bloques siguen recibiendo solo su propia porción, sin cambios.
+    if bloque_actual == "ajustar_inicio":
+        return _contexto_ajustar_inicio(estados)
     bloque = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
     return bloque["contexto"](estados[bloque_actual])
 
@@ -1221,6 +1319,78 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
             "falta_fecha": falta_fecha,
             "falta_hora":  falta_hora,
         }
+
+    if nombre == "ajustar_fecha_inicio":
+        print(f"[DEBUG-AJUSTE] ajustar_fecha_inicio LLAMADA: argumentos={argumentos} bloque_actual={bloque_actual!r}")
+        motivo = _fuera_de_turno("ajustar_inicio", bloque_actual)
+        if motivo:
+            print(f"[DEBUG-AJUSTE] RECHAZADA por fuera de turno: {motivo}")
+            return {"aplicado": False, "motivo": motivo}
+
+        nueva_fecha_str = argumentos["nueva_fecha_inicio"]
+        festivos_nuevos = argumentos["festivos_nuevos"]
+        estado_aj       = estados["ajustar_inicio"]
+
+        r_fecha = parsear_fecha(nueva_fecha_str)
+        if not r_fecha["valida"]:
+            print(f"[DEBUG-AJUSTE] RECHAZADA por fecha inválida: {r_fecha['mensaje']}")
+            return {"aplicado": False, "motivo": r_fecha["mensaje"]}
+
+        for f in festivos_nuevos:
+            r_f = parsear_fecha(f)
+            if not r_f["valida"]:
+                print(f"[DEBUG-AJUSTE] RECHAZADA por festivo inválido: {f!r} -> {r_f['mensaje']}")
+                return {"aplicado": False, "motivo": f"El festivo '{f}' no es una fecha válida: {r_f['mensaje']}"}
+
+        resultado_val = validar_inicio_antes_amarillo(
+            nueva_fecha_str, estados["calendario"]["dia_amarillo"]["valor"]
+        )
+        if not resultado_val["coherente"]:
+            print(f"[DEBUG-AJUSTE] RECHAZADA por incoherente con día amarillo: {resultado_val['mensaje']}")
+            return {"aplicado": False, "motivo": resultado_val["mensaje"]}
+
+        # ── Aplicar: nueva fecha de inicio + unión de festivos (nunca se pierden los anteriores)
+        estados["calendario"]["fecha_inicio"]["valor"] = nueva_fecha_str
+        festivos_actuales = set(estados["calendario"]["festivos"]["valor"])
+        estados["calendario"]["festivos"]["valor"] = sorted(festivos_actuales | set(festivos_nuevos))
+        incrementar_intentos_ajustar_inicio(estado_aj)
+
+        horas_faltantes = _calcular_horas_faltantes(estados)
+        print(
+            f"[DEBUG-AJUSTE] aplicado: nueva_fecha={nueva_fecha_str} festivos_nuevos={festivos_nuevos} "
+            f"intentos={estado_aj['intentos']} horas_faltantes={horas_faltantes}"
+        )
+
+        if horas_faltantes <= 0.01:
+            marcar_resuelto_ajustar_inicio(estado_aj)
+            print("[DEBUG-AJUSTE] RESUELTO: las horas ya dan.")
+            return {"aplicado": True, "horas_suficientes": True}
+
+        if estado_aj["intentos"] >= LIMITE_INTENTOS_AJUSTAR_INICIO:
+            marcar_resuelto_ajustar_inicio(estado_aj)  # desbloqueamos igualmente, con aviso
+            print(f"[DEBUG-AJUSTE] LÍMITE de {LIMITE_INTENTOS_AJUSTAR_INICIO} intentos alcanzado, se desbloquea con aviso.")
+            return {
+                "aplicado":           True,
+                "horas_suficientes":  False,
+                "horas_faltantes":    horas_faltantes,
+                "limite_alcanzado":   True,
+                "motivo": (
+                    f"Tras {estado_aj['intentos']} intentos, todavía faltan {horas_faltantes:.1f}h. "
+                    "Dile a Rosa que revise las fechas con calma (por ejemplo, dando de una vez "
+                    "todos los festivos del periodo ampliado) fuera de esta conversación, o que "
+                    "continúe si quiere — el sistema seguirá avisando si el horario queda incompleto."
+                ),
+            }
+
+        nueva_propuesta, _dias = _proponer_nueva_fecha_inicio(estados, horas_faltantes)
+        return {
+            "aplicado":              True,
+            "horas_suficientes":     False,
+            "horas_faltantes":       horas_faltantes,
+            "nueva_fecha_propuesta": nueva_propuesta.strftime("%d/%m/%Y"),
+            "intentos":              estado_aj["intentos"],
+        }
+
     return {"error": f"Herramienta desconocida: {nombre}"}
 
 
@@ -1231,6 +1401,74 @@ def crear_estado_conversacion():
         "estados":       {b["nombre"]: b["crear_estado"]() for b in BLOQUES},
         "bloque_actual": "tipo_curso",
     }
+
+
+def _calcular_horas_faltantes(estados):
+    """
+    Calcula cuántas horas faltan para completar el curso (130h), generando el
+    horario con el calendario/franjas/orden/prueba_fuego actuales.
+
+    Compartida por la Parte A (aviso final si el curso se generaría incompleto)
+    y por el bloque "ajustar_inicio" de la Parte B (red de seguridad temprana,
+    justo tras franjas). Requiere que calendario y franjas estén ya completos
+    — ambos lo están siempre que se llame desde estos dos sitios.
+    """
+    tipo_curso = estados["tipo_curso"]["tipo_curso"]
+    pf_estat = estados["prueba_fuego"]
+    pf = None
+    if tipo_curso == "mercancias" and pf_estat["fecha"] is not None:
+        pf = crear_prueba_fuego(pf_estat["fecha"], pf_estat["hora_inicio"], pf_estat["proveedor"])
+    resultat_h = generar_horario(
+        estados["calendario"], estados["franjas"], estados["orden"],
+        tipo_curso=tipo_curso, prueba_fuego=pf,
+    )
+    horas_totales = horas_totales_plantilla(tipo_curso)
+    horas_puestas = horas_colocadas(resultat_h["horario"])
+    return horas_totales - horas_puestas
+
+
+def _proponer_nueva_fecha_inicio(estados, horas_faltantes):
+    """
+    Calcula una fecha de inicio más temprana que cubra las horas que faltan.
+
+    Simula día a día HACIA ATRÁS (no un promedio) desde la fecha de inicio
+    actual, sumando las horas netas reales de cada día según su franja
+    (lunes-jueves, viernes y sábado dan horas distintas), saltando domingos y
+    festivos ya conocidos, hasta acumular las horas que faltan. Después añade
+    1 día LABORABLE (lunes-viernes) de margen, saltando fines de semana y
+    festivos si el margen cae justo ahí.
+
+    Devuelve (nueva_fecha: date, dias_lectivos_anadidos: int).
+    """
+    franjas = construir_franjas_semanales(estados["franjas"])
+    horas_por_weekday = {}
+    for wd in range(7):
+        franja = franjas.get(wd)
+        horas_por_weekday[wd] = horas_clase_de_dia(franja["inicio"], franja["fin"]) if franja else 0.0
+
+    fecha_inicio_actual = parsear_fecha(estados["calendario"]["fecha_inicio"]["valor"])["fecha"]
+    festivos_actuales = {
+        parsear_fecha(f)["fecha"] for f in estados["calendario"]["festivos"]["valor"]
+    }
+
+    acumulado      = 0.0
+    dias_contados  = 0
+    cursor         = fecha_inicio_actual - timedelta(days=1)
+    while acumulado < horas_faltantes:
+        if cursor.weekday() != 6 and cursor not in festivos_actuales:
+            h = horas_por_weekday.get(cursor.weekday(), 0.0)
+            if h > 0:
+                acumulado     += h
+                dias_contados += 1
+        cursor -= timedelta(days=1)
+    nueva_fecha_sin_margen = cursor + timedelta(days=1)
+
+    # Margen: 1 día laborable (lunes-viernes) más — salta sábado/domingo/festivo
+    margen = nueva_fecha_sin_margen - timedelta(days=1)
+    while margen.weekday() >= 5 or margen in festivos_actuales:  # 5=sábado, 6=domingo
+        margen -= timedelta(days=1)
+
+    return margen, dias_contados
 
 
 def avanzar_o_generar(estados, bloque_actual):
@@ -1296,32 +1534,13 @@ def avanzar_o_generar(estados, bloque_actual):
         }
 
     # ── Todos los bloques completos: generar el documento ──────────────────────
-    pf_estat = estados["prueba_fuego"]
-    pf = None
-    if (estados["tipo_curso"]["tipo_curso"] == "mercancias"
-            and pf_estat["fecha"] is not None):
-        pf = crear_prueba_fuego(
-            pf_estat["fecha"], pf_estat["hora_inicio"], pf_estat["proveedor"],
-        )
     tipo_curso = estados["tipo_curso"]["tipo_curso"]
-    resultat_h = generar_horario(
-        estados["calendario"], estados["franjas"], estados["orden"],
-        tipo_curso=tipo_curso,
-        prueba_fuego=pf,
-    )
 
-    # ── Red de seguridad: ¿dan las horas para completar el curso (130h)? ────────
-    # generar_horario ya calcula qué materias no caben (resultat_h["pendientes"]);
-    # hasta ahora eso se descartaba y el documento se generaba igual, incompleto,
-    # sin avisar a nadie. Lo comprobamos ANTES de dar el curso por completado.
-    horas_totales   = horas_totales_plantilla(tipo_curso)
-    horas_puestas   = horas_colocadas(resultat_h["horario"])
-    horas_faltantes = horas_totales - horas_puestas
-    print(
-        f"[DEBUG-HORAS] tipo_curso={tipo_curso} horas_totales={horas_totales} "
-        f"horas_colocadas={horas_puestas} horas_faltantes={horas_faltantes} "
-        f"pendientes={resultat_h['pendientes']}"
-    )
+    # ── Red de seguridad final (Parte A): ¿dan las horas para completar el curso?
+    # Si el bloque "ajustar_inicio" (Parte B) ya hizo su trabajo justo tras franjas,
+    # esto no debería disparar nunca — se deja como último resguardo, por si acaso.
+    horas_faltantes = _calcular_horas_faltantes(estados)
+    print(f"[DEBUG-HORAS] tipo_curso={tipo_curso} horas_faltantes={horas_faltantes}")
     if horas_faltantes > 0.01:  # margen para redondeos de coma flotante
         mensaje_aviso = (
             "He revisado las fechas y con este calendario no dan las horas "
@@ -1337,6 +1556,17 @@ def avanzar_o_generar(estados, bloque_actual):
             "horas_insuficientes": True,
         }
 
+    pf_estat = estados["prueba_fuego"]
+    pf = None
+    if tipo_curso == "mercancias" and pf_estat["fecha"] is not None:
+        pf = crear_prueba_fuego(
+            pf_estat["fecha"], pf_estat["hora_inicio"], pf_estat["proveedor"],
+        )
+    resultat_h = generar_horario(
+        estados["calendario"], estados["franjas"], estados["orden"],
+        tipo_curso=tipo_curso,
+        prueba_fuego=pf,
+    )
     horari = aplicar_profesores(resultat_h["horario"], estados["profesores"])
     ruta_docx = generar_document(
         horari, str(_BASE / "output_cap.docx"),
