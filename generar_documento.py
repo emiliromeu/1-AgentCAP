@@ -34,7 +34,6 @@ DIES_SETMANA_CA = {
 
 DADES_CURS = {
     "formacio":     "Mòduls 1, 2, 3 i 5",
-    "curs":         "QUALIFICACIÓ INICIAL MERCADERIES",
     "durada":       "accelerat 130 hores",
     "empresa":      "AUTOESCOLA OLIVELLA",
     "nif":          "B-60723152",
@@ -63,6 +62,14 @@ _COLOR_RED_RGB   = RGBColor(0xFF, 0x00, 0x00)  # vermell ampliació cronograma
 _AMPLIACION_CURS = {
     "mercancias": AMPLIACION_MERCANCIAS,
     "viatgers":   AMPLIACION_VIATGERS,
+}
+
+# Nom del curs segons tipo_curso — usat al títol de portada i als textos
+# "QUALIFICACIÓ INICIAL ...". Abans estava hardcodejat a "MERCADERIES" sempre,
+# fins i tot en documents de viatgers.
+_NOM_CURS = {
+    "mercancias": "MERCADERIES",
+    "viatgers":   "VIATGERS",
 }
 
 # ── Cronograma: materials i categories ───────────────────────────────────────
@@ -407,9 +414,10 @@ def generar_document(horari_amb_professors, ruta_sortida,
     p_logo.add_run().add_picture(ruta_logo, width=Inches(2.4))
 
     # Dades del curs: 6 línies negreta, centrades
+    nom_curs = _NOM_CURS.get(tipo_curso, "MERCADERIES")
     for linia in [
         f"FORMACIÓ COMPLEMENTÀRIA: {DADES_CURS['formacio']}",
-        f"CURS: {DADES_CURS['curs']}",
+        f"CURS: QUALIFICACIÓ INICIAL {nom_curs}",
         f"Durada: {DADES_CURS['durada']}",
         f"Empresa autoritzada: {DADES_CURS['empresa']}",
         f"NIF: {DADES_CURS['nif']}",
@@ -424,12 +432,12 @@ def generar_document(horari_amb_professors, ruta_sortida,
         r.font.name = _FONT
         r.font.size = Pt(12)
 
-    # Títol MERCADERIES: gran, color de marca
+    # Títol (MERCADERIES o VIATGERS segons tipo_curso): gran, color de marca
     p_titol = doc.add_paragraph()
     p_titol.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_titol.paragraph_format.space_before = Pt(80)
     p_titol.paragraph_format.space_after  = Pt(0)
-    r = p_titol.add_run("MERCADERIES")
+    r = p_titol.add_run(nom_curs)
     r.bold           = True
     r.font.name      = _FONT
     r.font.size      = Pt(32)
@@ -644,7 +652,7 @@ def generar_document(horari_amb_professors, ruta_sortida,
     for label, valor in [
         ("Correu Electronic: ",    "inspeccionscap@autoescolaolivella.com"),
         ("Telèfon de Contacte: ",  "686329958"),
-        ("",                       "CURS QUALIFICACIÓ INICIAL DE MERCADERIES"),
+        ("",                       f"CURS QUALIFICACIÓ INICIAL DE {nom_curs}"),
         ("Data Inici: ",           data_inici),
         ("Data Final: ",           data_final),
     ]:
