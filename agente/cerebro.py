@@ -56,7 +56,7 @@ from agente.recogida_prueba_fuego import (
 )
 from herramientas.motor_prueba_fuego import crear_prueba_fuego
 from datos.orden_asignaturas import ORDEN_HABITUAL_MERCANCIAS
-from ensamblaje import generar_horario, aplicar_profesores
+from ensamblaje import generar_horario, aplicar_profesores, horas_totales_plantilla, horas_colocadas
 from generar_documento import generar_document
 from herramientas.horarios import validar_horario
 from herramientas.validar_dni import validar_documento
@@ -1303,11 +1303,40 @@ def avanzar_o_generar(estados, bloque_actual):
         pf = crear_prueba_fuego(
             pf_estat["fecha"], pf_estat["hora_inicio"], pf_estat["proveedor"],
         )
+    tipo_curso = estados["tipo_curso"]["tipo_curso"]
     resultat_h = generar_horario(
         estados["calendario"], estados["franjas"], estados["orden"],
-        tipo_curso=estados["tipo_curso"]["tipo_curso"],
+        tipo_curso=tipo_curso,
         prueba_fuego=pf,
     )
+
+    # ── Red de seguridad: ¿dan las horas para completar el curso (130h)? ────────
+    # generar_horario ya calcula qué materias no caben (resultat_h["pendientes"]);
+    # hasta ahora eso se descartaba y el documento se generaba igual, incompleto,
+    # sin avisar a nadie. Lo comprobamos ANTES de dar el curso por completado.
+    horas_totales   = horas_totales_plantilla(tipo_curso)
+    horas_puestas   = horas_colocadas(resultat_h["horario"])
+    horas_faltantes = horas_totales - horas_puestas
+    print(
+        f"[DEBUG-HORAS] tipo_curso={tipo_curso} horas_totales={horas_totales} "
+        f"horas_colocadas={horas_puestas} horas_faltantes={horas_faltantes} "
+        f"pendientes={resultat_h['pendientes']}"
+    )
+    if horas_faltantes > 0.01:  # margen para redondeos de coma flotante
+        mensaje_aviso = (
+            "He revisado las fechas y con este calendario no dan las horas "
+            f"suficientes para completar el curso — faltan {horas_faltantes:.1f} horas. "
+            "Necesitamos ajustar las fechas para que quepa todo el temario."
+        )
+        return {
+            "bloque_actual":       bloque_actual,
+            "avanzo":              False,
+            "terminado":           False,
+            "ruta_docx":           None,
+            "respuesta_text":      mensaje_aviso,
+            "horas_insuficientes": True,
+        }
+
     horari = aplicar_profesores(resultat_h["horario"], estados["profesores"])
     ruta_docx = generar_document(
         horari, str(_BASE / "output_cap.docx"),
@@ -1315,7 +1344,7 @@ def avanzar_o_generar(estados, bloque_actual):
         estado_practicas=estados["practicas"],
         estado_calendario=estados["calendario"],
         estado_franjas=estados["franjas"],
-        tipo_curso=estados["tipo_curso"]["tipo_curso"],
+        tipo_curso=tipo_curso,
     )
 
     respuesta_text = (
@@ -1421,6 +1450,14 @@ def procesar_turno(entrada, estado_conversacion, client):
                 ruta_docx      = resultado_avance["ruta_docx"]
                 respuesta_text = resultado_avance["respuesta_text"]
                 terminado      = True
+                break
+            elif resultado_avance.get("horas_insuficientes"):
+                # Aviso fijo (no generado por el LLM, igual que el mensaje de éxito):
+                # se añade también al historial que ve el modelo, porque la
+                # conversación sigue (a diferencia del caso "terminado", aquí Rosa
+                # puede seguir escribiendo) y el modelo debe saber que ya se avisó.
+                respuesta_text = resultado_avance["respuesta_text"]
+                messages.append({"role": "assistant", "content": respuesta_text})
                 break
 
         else:  # end_turn

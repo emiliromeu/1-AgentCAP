@@ -115,6 +115,37 @@ def generar_horario(estado_calendario, estado_franjas, estado_orden,
     }
 
 
+def horas_totales_plantilla(tipo_curso):
+    """
+    Devuelve el total de horas oficiales del plan (suma de la plantilla) para
+    el tipo de curso — 130.0 h tanto para mercancías como para viajeros hoy,
+    pero se calcula sumando la plantilla real en vez de un número fijo, para
+    seguir siendo correcto si la plantilla cambiara en el futuro.
+    """
+    if tipo_curso not in _CONF_CURSO:
+        raise ValueError(f"tipo_curso desconegut: {tipo_curso!r}. Valors: {list(_CONF_CURSO)}")
+    plantilla, _, _ = _CONF_CURSO[tipo_curso]
+    return sum(float(h) for _, h in plantilla)
+
+
+def horas_colocadas(horario_detallado):
+    """
+    Suma las horas netas de clase (excluyendo descansos) ya colocadas en un
+    horario detallado (el que devuelve generar_horario en la clave "horario").
+    """
+    ancla = date.today()
+    total = 0.0
+    for entrada in horario_detallado:
+        for tramo in entrada["tramos"]:
+            if tramo["tipo"] != "clase":
+                continue
+            minutos = (
+                datetime.combine(ancla, tramo["fin"]) - datetime.combine(ancla, tramo["inicio"])
+            ).total_seconds() / 60
+            total += minutos / 60
+    return total
+
+
 def cronograma_por_semanas(horario_detallado):
     """
     Agrupa el horario detallado por semanas naturales (lunes–domingo) y acumula

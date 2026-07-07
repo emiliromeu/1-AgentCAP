@@ -195,6 +195,10 @@ def _cerrar_lista_abierta(nombre_bloque, marcar_terminado_fn, mensaje_chat, clie
         st.session_state.chat_messages.append(
             {"role": "assistant", "content": resultado["respuesta_text"]}
         )
+    elif resultado.get("horas_insuficientes"):
+        st.session_state.chat_messages.append(
+            {"role": "assistant", "content": resultado["respuesta_text"]}
+        )
     elif resultado["avanzo"]:
         # Bloque nuevo activo (p.ej. alumnos -> profesores): el agente pregunta
         # solo, sin esperar a que Rosa escriba nada.
