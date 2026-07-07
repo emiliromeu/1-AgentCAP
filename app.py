@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 from anthropic import Anthropic
 
@@ -166,6 +167,7 @@ def _init_limpio():
     st.session_state.terminado     = False
     st.session_state.ruta_docx     = None
     st.session_state.recuperant    = False   # flag: mostrant el diàleg de recuperació
+    st.session_state.scroll_hecho  = False   # para que el próximo CAP también haga scroll
 
 
 def _cerrar_lista_abierta(nombre_bloque, marcar_terminado_fn, mensaje_chat, client):
@@ -343,6 +345,26 @@ if st.session_state.terminado:
         eliminar_estado(RUTA_SESSIO)
         _init_limpio()
         st.rerun()
+
+    # Scroll automático al fondo, SOLO la primera vez que se muestra el resultado
+    # final — aislado en su propio iframe (components.v1.html) para que, si algo
+    # falla, se quede contenido ahí y nunca afecte al resto de la app.
+    if not st.session_state.get("scroll_hecho", False):
+        components.v1.html(
+            """
+            <script>
+            try {
+                setTimeout(function () {
+                    var doc = window.parent.document;
+                    doc.documentElement.scrollTop = doc.documentElement.scrollHeight;
+                    doc.body.scrollTop = doc.body.scrollHeight;
+                }, 200);
+            } catch (e) { /* si falla, no pasa nada — es solo un extra visual */ }
+            </script>
+            """,
+            height=0,
+        )
+        st.session_state.scroll_hecho = True
 
 # ── Input de l'usuari (desactivat quan la conversa ha acabat) ─────────────────
 if not st.session_state.terminado:
