@@ -1,11 +1,8 @@
 @echo off
 :: ============================================================
-::  CREAR ACCESO DIRECTO EN EL ESCRITORIO — Generador CAP
+::  CREAR ACCESO DIRECTO EN EL ESCRITORIO - Generador CAP
 :: ============================================================
 title Crear acceso directo - Generador CAP
-
-:: Situa't a la carpeta del .bat (funciona des de qualsevol lloc)
-cd /d "%~dp0"
 
 echo.
 echo ============================================================
@@ -13,9 +10,12 @@ echo   Creando el acceso directo en el escritorio...
 echo ============================================================
 echo.
 
-:: ── Comprova que el programa principal existeixi ─────────────
-if not exist "2_Abrir_CAP.bat" (
-    echo [ERROR] No se encuentra "2_Abrir_CAP.bat" en esta carpeta.
+:: Comprobamos que el programa principal existe (ruta relativa
+:: al propio script, con %~dp0, para que funcione en cualquier
+:: carpeta donde este el proyecto)
+if not exist "%~dp02_Abrir_CAP.bat" (
+    echo [ERROR] No se encuentra "2_Abrir_CAP.bat" en esta carpeta:
+    echo   %~dp0
     echo.
     echo   Este script debe estar en la misma carpeta que el programa
     echo   (junto a 1_Instalar_CAP.bat y 2_Abrir_CAP.bat).
@@ -23,41 +23,64 @@ if not exist "2_Abrir_CAP.bat" (
     pause
     exit /b 1
 )
+echo [OK] Encontrado 2_Abrir_CAP.bat
 
-:: ── Icono: si no existe, se crea igual pero con el icono por defecto ──
-set "ICONO=%cd%\assets\olivella.ico"
-if not exist "%ICONO%" (
+:: Comprobamos el icono. Si falta, avisamos pero seguimos
+set "HAY_ICONO=1"
+if not exist "%~dp0assets\olivella.ico" (
     echo [AVISO] No se encuentra "assets\olivella.ico".
     echo El acceso directo se creara igualmente, con el icono por defecto.
-    echo.
-    set "ICONO="
+    set "HAY_ICONO=0"
+) else (
+    echo [OK] Encontrado assets\olivella.ico
 )
 
-:: ── Generamos un script de PowerShell temporal para crear el acceso
-::    directo (los .bat no pueden crear .lnk por si solos). Se borra
-::    despues de usarlo.
-set "TEMP_PS1=%TEMP%\crear_acceso_cap_%RANDOM%.ps1"
+:: Detectamos el escritorio REAL del usuario con PowerShell.
+:: [Environment]::GetFolderPath('Desktop') respeta OneDrive si
+:: el escritorio esta redirigido ahi.
+echo.
+echo Detectando la carpeta del escritorio...
+set "DESKTOP="
+for /f "usebackq delims=" %%D in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "[Environment]::GetFolderPath('Desktop')"`) do set "DESKTOP=%%D"
 
-> "%TEMP_PS1%" (
-    echo $ws = New-Object -ComObject WScript.Shell
-    echo $desktop = $ws.SpecialFolders^('Desktop'^)
-    echo $lnk = $ws.CreateShortcut^("$desktop\Generador CAP - Autoescola Olivella.lnk"^)
-    echo $lnk.TargetPath = "%cd%\2_Abrir_CAP.bat"
-    echo $lnk.WorkingDirectory = "%cd%"
-    if defined ICONO echo $lnk.IconLocation = "%ICONO%"
-    echo $lnk.Description = "Generador de Horarios CAP - Autoescola Olivella"
-    echo $lnk.Save^(^)
+if not defined DESKTOP (
+    echo [ERROR] No se ha podido detectar la carpeta del escritorio.
+    echo Comprueba que PowerShell esta disponible en este PC.
+    echo.
+    pause
+    exit /b 1
+)
+echo Escritorio detectado en: %DESKTOP%
+
+set "ENLACE=%DESKTOP%\Generador CAP - Autoescola Olivella.lnk"
+
+echo.
+echo Creando el acceso directo:
+echo   %ENLACE%
+echo   -> apunta a: %~dp02_Abrir_CAP.bat
+echo.
+
+:: Creamos el acceso directo con PowerShell, en una sola linea
+:: (sin generar ningun archivo intermedio, para evitar errores
+:: de escritura/lectura de ficheros temporales)
+if "%HAY_ICONO%"=="1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$s = New-Object -ComObject WScript.Shell; $l = $s.CreateShortcut('%ENLACE%'); $l.TargetPath = '%~dp02_Abrir_CAP.bat'; $l.WorkingDirectory = '%~dp0'; $l.IconLocation = '%~dp0assets\olivella.ico'; $l.Description = 'Generador de Horarios CAP - Autoescola Olivella'; $l.Save()"
+) else (
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$s = New-Object -ComObject WScript.Shell; $l = $s.CreateShortcut('%ENLACE%'); $l.TargetPath = '%~dp02_Abrir_CAP.bat'; $l.WorkingDirectory = '%~dp0'; $l.Description = 'Generador de Horarios CAP - Autoescola Olivella'; $l.Save()"
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP_PS1%"
-set "RESULTADO=%errorlevel%"
-
-del "%TEMP_PS1%" >nul 2>&1
-
-if not "%RESULTADO%"=="0" (
+:: Verificamos el resultado comprobando si el archivo existe
+:: de verdad, en vez de confiar solo en el codigo de salida
+:: de PowerShell (puede devolver 0 aunque algo fallara)
+if not exist "%ENLACE%" (
     echo.
-    echo [ERROR] No se ha podido crear el acceso directo.
-    echo Guarda una captura de pantalla de este error y contacta con soporte.
+    echo ============================================================
+    echo   [ERROR] No se ha creado el acceso directo.
+    echo ============================================================
+    echo.
+    echo   Guarda una captura de pantalla de este mensaje y de la
+    echo   ventana de PowerShell si ha aparecido alguna, y contacta
+    echo   con soporte.
     echo.
     pause
     exit /b 1
@@ -65,7 +88,7 @@ if not "%RESULTADO%"=="0" (
 
 echo.
 echo ============================================================
-echo   Listo! Ya tienes el acceso directo en tu escritorio:
+echo   Listo! Se ha creado el acceso directo en tu escritorio:
 echo.
 echo       "Generador CAP - Autoescola Olivella"
 echo.
