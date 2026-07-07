@@ -978,36 +978,55 @@ def _contexto_ajustar_inicio(estados):
     caso especial en _construir_contexto_estado) porque necesita calendario +
     franjas + orden + prueba_fuego para calcular cuántas horas faltan y
     proponer una fecha.
+
+    CLAVE: el cálculo (horas que faltan, fecha propuesta) se hace AQUÍ, dentro
+    de esta función, ANTES de construir el texto — nunca al revés. El LLM NO
+    calcula nada: solo comunica a Rosa los valores que este bloque ya calculó.
+    Como se recalcula de cero en cada llamada (sin caché), cada vuelta del
+    bucle de reintentos ve automáticamente la fecha/horas ya actualizadas.
     """
     estado_aj       = estados["ajustar_inicio"]
     fecha_actual    = estados["calendario"]["fecha_inicio"]["valor"]
     horas_faltantes = _calcular_horas_faltantes(estados)
     nueva_fecha, dias_necesarios = _proponer_nueva_fecha_inicio(estados, horas_faltantes)
+    nueva_fecha_str = nueva_fecha.strftime("%d/%m/%Y")
+
+    frase_ejemplo = (
+        f"«Con estas fechas faltan {horas_faltantes:.1f} horas. Propongo adelantar el "
+        f"inicio al {nueva_fecha_str}. ¿Te va bien, o prefieres otra fecha? ¿Hay festivos "
+        f"entre el {nueva_fecha_str} y el {fecha_actual}?»"
+    )
 
     return "\n".join([
         "=== BLOQUE ACTUAL: AJUSTAR FECHA DE INICIO (faltan horas para completar el curso) ===",
-        f"Con el calendario actual, faltan {horas_faltantes:.1f}h para completar el curso (130h).",
-        f"Fecha de inicio actual: {fecha_actual}",
-        f"Fecha propuesta por el sistema: {nueva_fecha.strftime('%d/%m/%Y')} "
-        f"({dias_necesarios} días lectivos más, adelantando el inicio, más 1 día "
-        "laborable de margen para que Rosa pueda organizarse sin agobios).",
-        f"Intentos de ajuste hasta ahora: {estado_aj['intentos']} de {LIMITE_INTENTOS_AJUSTAR_INICIO}.",
         "",
-        "AHORA TE TOCA (en este orden, con calma, sin tecnicismos):",
-        f"1. Explica a Rosa que con las fechas actuales el curso no completa las horas "
-        f"— faltan {horas_faltantes:.1f} horas — y que hay que adelantar el inicio.",
-        f"2. Propónle la nueva fecha: {nueva_fecha.strftime('%d/%m/%Y')}. Puede aceptarla "
-        "o darte ella otra, siempre que sea igual de temprana o más.",
-        "   Explícale que la fecha ya incluye un día laborable extra de margen, para no ir muy justos.",
-        "3. Pregúntale si hay algún festivo entre esa nueva fecha y la fecha de inicio "
-        f"actual ({fecha_actual}) — son días nuevos que antes no estaban contados. Si no "
-        "hay ninguno, que te lo confirme igualmente (necesitas la respuesta, aunque sea 'ninguno').",
-        "4. Solo cuando tengas AMBOS datos (fecha confirmada + festivos del tramo nuevo, "
-        "aunque sea lista vacía), llama a ajustar_fecha_inicio con nueva_fecha_inicio y festivos_nuevos.",
-        "5. Si el sistema te indica que TODAVÍA faltan horas, vuelve a explicárselo a Rosa "
-        "con la nueva propuesta que te devuelva, y repite desde el paso 2.",
-        "6. Si el sistema te indica que se ha llegado al límite de intentos, dile a Rosa "
-        "exactamente lo que te indique el mensaje — no sigas insistiendo con más propuestas.",
+        "*** ESTE ES EL PASO ACTUAL. No hables de alumnos, profesores ni prácticas hasta",
+        "resolver esto. ***",
+        "",
+        "El SISTEMA (no tú) ya ha calculado estos datos — no tienes que calcular nada:",
+        f"  - Horas que faltan para completar el curso (130h): {horas_faltantes:.1f}h",
+        f"  - Fecha de inicio actual: {fecha_actual}",
+        f"  - NUEVA fecha de inicio propuesta: {nueva_fecha_str} "
+        f"({dias_necesarios} días lectivos más, adelantando el inicio, más 1 día "
+        "laborable de margen para que Rosa no vaya justa).",
+        f"  - Intentos de ajuste hasta ahora: {estado_aj['intentos']} de {LIMITE_INTENTOS_AJUSTAR_INICIO}.",
+        "",
+        "*** TÚ NO CALCULAS NADA. Estos valores ya están calculados por el sistema — tu único",
+        "trabajo es comunicárselos a Rosa, con tus propias palabras o muy parecidas a estas: ***",
+        f"  {frase_ejemplo}",
+        "",
+        "AHORA TE TOCA:",
+        "1. Dile a Rosa la frase de arriba (con tu propio tono, cercano y sin tecnicismos).",
+        "2. Espera su respuesta: qué fecha confirma (la propuesta u otra) y si hay festivos "
+        "en el tramo nuevo (aunque sea 'ninguno').",
+        "3. Solo cuando tengas AMBOS datos (fecha + festivos, aunque sea lista vacía), llama "
+        "a ajustar_fecha_inicio con nueva_fecha_inicio y festivos_nuevos.",
+        "4. Si el sistema te devuelve que TODAVÍA faltan horas, aquí mismo (en el próximo turno) "
+        "verás la nueva propuesta ya recalculada — coméntasela a Rosa igual que antes, y repite "
+        "desde el paso 1.",
+        "5. Si el sistema te indica que se ha llegado al límite de intentos, dile a Rosa "
+        "exactamente lo que te indique el mensaje del sistema — no sigas insistiendo con más "
+        "propuestas por tu cuenta.",
     ])
 
 
