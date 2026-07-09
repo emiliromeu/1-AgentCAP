@@ -72,6 +72,15 @@ _NOM_CURS = {
     "viatgers":   "VIATGERS",
 }
 
+# Text llarg de la línia "CURS:" de portada, només per a viatgers (mercaderies
+# manté "QUALIFICACIÓ INICIAL MERCADERIES" sense canvis). Petició explícita:
+# aquest text NO afecta el títol gran de portada ni el text de COMUNICACIONS,
+# que segueixen usant _NOM_CURS ("VIATGERS") tal com estaven.
+_TEXT_CURS_PORTADA_VIATGERS = (
+    "FORM. MATERIA DE SENSIBIL. VIATGERS AMB DISCAPAC / FORM. TRANSPORTE "
+    "ESCOLAR, PRIMERS AUXILIS I TACOGRAF DIG."
+)
+
 # ── Cronograma: materials i categories ───────────────────────────────────────
 
 MATERIAS_CRONOGRAMA = [
@@ -281,6 +290,13 @@ def _set_valign(cell, val='center'):
     va.set(qn('w:val'), val)
     tcPr.append(va)
 
+def _set_row_keep_with_next(row):
+    """Marca tots els paràgrafs de totes les cel·les d'una fila amb keep_with_next,
+    perquè Word mai talli la pàgina entre aquesta fila i la següent."""
+    for cell in row.cells:
+        for p in cell.paragraphs:
+            p.paragraph_format.keep_with_next = True
+
 def _remove_para_spacing(para):
     pPr = para._p.get_or_add_pPr()
     for ex in pPr.findall(qn('w:spacing')):
@@ -415,9 +431,13 @@ def generar_document(horari_amb_professors, ruta_sortida,
 
     # Dades del curs: 6 línies negreta, centrades
     nom_curs = _NOM_CURS.get(tipo_curso, "MERCADERIES")
+    texto_curs_portada = (
+        _TEXT_CURS_PORTADA_VIATGERS if tipo_curso == "viatgers"
+        else f"QUALIFICACIÓ INICIAL {nom_curs}"
+    )
     for linia in [
         f"FORMACIÓ COMPLEMENTÀRIA: {DADES_CURS['formacio']}",
-        f"CURS: QUALIFICACIÓ INICIAL {nom_curs}",
+        f"CURS: {texto_curs_portada}",
         f"Durada: {DADES_CURS['durada']}",
         f"Empresa autoritzada: {DADES_CURS['empresa']}",
         f"NIF: {DADES_CURS['nif']}",
@@ -488,6 +508,7 @@ def generar_document(horari_amb_professors, ruta_sortida,
         dia_setmana = DIES_SETMANA_CA.get(dia.weekday(), "")
         data_text   = dia.strftime("%d/%m/%Y")
 
+        files_dia = []
         for i, tramo in enumerate(tramos):
             hora_txt = _hora_rang(tramo["inicio"], tramo["fin"])
 
@@ -513,6 +534,7 @@ def generar_document(horari_amb_professors, ruta_sortida,
 
             fila     = _afegir_fila_tram(table, hora_txt, tema_txt, prof_txt,
                                          tema_color=tema_color)
+            files_dia.append(fila)
             dia_cell = fila.cells[0]
             _set_cell_width(dia_cell, _W_DIA)
             _add_borders(dia_cell)
@@ -524,7 +546,16 @@ def generar_document(horari_amb_professors, ruta_sortida,
             else:
                 _set_vmerge_continue(dia_cell)
 
-        _afegir_fila_total(table, _total_hores_str(tramos))
+        fila_total = _afegir_fila_total(table, _total_hores_str(tramos))
+        files_dia.append(fila_total)
+
+        # Mantenir totes les files d'aquest dia juntes: cada fila (menys l'última,
+        # la del total) s'"enganxa" a la següent amb keep_with_next -- si el dia
+        # no cap sencer al que queda de pàgina, Word el salta sencer a la següent,
+        # mai el parteix entre dues files. La fila del total NO s'enganxa a res,
+        # perquè no s'ha de forçar que el dia següent quedi enganxat a aquest.
+        for fila in files_dia[:-1]:
+            _set_row_keep_with_next(fila)
 
     # ── PART DOS: alumnos, pràctiques, comunicacions ───────────────────────────
 
