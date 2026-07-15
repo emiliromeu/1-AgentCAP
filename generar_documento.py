@@ -624,6 +624,45 @@ def generar_document(horari_amb_professors, ruta_sortida,
     br2.set(qn('w:type'), 'page')
     p_salt2.add_run()._r.append(br2)
 
+    # ── Línia obligatòria d'inspecció telemàtica ──────────────────────────────
+    _linia("AQUESTES DADES SON A EFECTES D'INSPECCIONS TELEMÀTIQUES.",
+           bold=True, size=11, sb=22, sa=6)
+
+    # ── Secció: COMUNICACIONS INICIAL DEL CURS ────────────────────────────────
+    _titol_seccio("COMUNICACIONS INICIAL DEL CURS", underline=False, space_before=4)
+
+    data_inici = estado_calendario["fecha_inicio"]["valor"]
+    data_final = estado_calendario["dia_amarillo"]["valor"]
+
+    for label, valor in [
+        ("Correu Electronic: ",    "inspeccionscap@autoescolaolivella.com"),
+        ("Telèfon de Contacte: ",  "686329958"),
+        ("",                       f"CURS QUALIFICACIÓ INICIAL DE {nom_curs}"),
+        ("Data Inici: ",           data_inici),
+        ("Data Final: ",           data_final),
+    ]:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(3)
+        p.paragraph_format.space_after  = Pt(3)
+        if label:
+            r1 = p.add_run(label)
+            r1.bold      = True
+            r1.font.name = _FONT
+            r1.font.size = Pt(11)
+        r2 = p.add_run(valor)
+        r2.bold      = not bool(label)
+        r2.font.name = _FONT
+        r2.font.size = Pt(11)
+
+    # Salt de pàgina (separa COMUNICACIONS, que ara ve just després de l'horari,
+    # de la secció d'alumnes/pràctiques que abans començava aquí mateix)
+    p_salt_comm = doc.add_paragraph()
+    p_salt_comm.paragraph_format.space_before = Pt(0)
+    p_salt_comm.paragraph_format.space_after  = Pt(0)
+    br_comm = OxmlElement('w:br')
+    br_comm.set(qn('w:type'), 'page')
+    p_salt_comm.add_run()._r.append(br_comm)
+
     # ── Secció 1: RELACIÓ ALUMNES 130H ───────────────────────────────────────
     _titol_seccio("RELACIÓ ALUMNES 130H", space_before=0)
 
@@ -669,36 +708,6 @@ def generar_document(horari_amb_professors, ruta_sortida,
             )
     else:
         _linia("(No hi ha sessions de pràctiques registrades)", size=11)
-
-    # ── Línia obligatòria d'inspecció telemàtica ──────────────────────────────
-    _linia("AQUESTES DADES SON A EFECTES D'INSPECCIONS TELEMÀTIQUES.",
-           bold=True, size=11, sb=22, sa=6)
-
-    # ── Secció 4: COMUNICACIONS INICIAL DEL CURS ─────────────────────────────
-    _titol_seccio("COMUNICACIONS INICIAL DEL CURS", underline=False, space_before=4)
-
-    data_inici = estado_calendario["fecha_inicio"]["valor"]
-    data_final = estado_calendario["dia_amarillo"]["valor"]
-
-    for label, valor in [
-        ("Correu Electronic: ",    "inspeccionscap@autoescolaolivella.com"),
-        ("Telèfon de Contacte: ",  "686329958"),
-        ("",                       f"CURS QUALIFICACIÓ INICIAL DE {nom_curs}"),
-        ("Data Inici: ",           data_inici),
-        ("Data Final: ",           data_final),
-    ]:
-        p = doc.add_paragraph()
-        p.paragraph_format.space_before = Pt(3)
-        p.paragraph_format.space_after  = Pt(3)
-        if label:
-            r1 = p.add_run(label)
-            r1.bold      = True
-            r1.font.name = _FONT
-            r1.font.size = Pt(11)
-        r2 = p.add_run(valor)
-        r2.bold      = not bool(label)
-        r2.font.name = _FONT
-        r2.font.size = Pt(11)
 
     # ── PART TRES: CRONOGRAMA PER SETMANES (pàgina apaïsada) ─────────────────
     cronograma = cronograma_por_semanas(horari_amb_professors)
