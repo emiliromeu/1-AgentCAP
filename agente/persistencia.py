@@ -8,7 +8,9 @@ Estructura del fitxer JSON:
     "bloque_actual": str,
     "llm_messages":  [...],          ← dicts purs (no objectes SDK)
     "estados": {
-      "tipo_curso":   {...},
+      "tipo_curso":   {...},         ← FASE 1: {tipo_formacio, modalitat, terminado}
+                                       (l'esquema vell {tipo_curso: ...} es migra
+                                       sol en carregar, mai cal tocar res a mà)
       "calendario":   {...},         ← dates com a strings "DD/MM/AAAA" (ja ho fan els estats)
       "prueba_fuego": {              ← fecha → "YYYY-MM-DD", hora_inicio → "HH:MM:SS"
         "fecha": "2026-09-19" | null,
@@ -97,7 +99,19 @@ def _serialitzar_estados(estados: dict) -> dict:
 def _deserialitzar_estados(estados: dict) -> dict:
     """
     Restaura els date/time de prueba_fuego des de strings ISO.
+
+    FASE 1 (dos eixos): migració mansa de l'esquema vell de tipo_curso —
+    una sessió desada abans del refactor porta {"tipo_curso": "mercancias",
+    "terminado": ...}; es converteix en carregar a l'esquema nou
+    {"tipo_formacio": "inicial", "modalitat": ...} (l'únic tipus que
+    existia era l'inicial). Idempotent: l'esquema nou passa net.
     """
+    tc = estados.get("tipo_curso", {})
+    if "tipo_curso" in tc and "modalitat" not in tc:
+        vell = tc.pop("tipo_curso")
+        tc["tipo_formacio"] = "inicial" if vell is not None else None
+        tc["modalitat"] = {"mercancias": "mercancies", "viatgers": "viatgers"}.get(vell)
+
     pf = estados.get("prueba_fuego", {})
     if isinstance(pf.get("fecha"), str) and pf["fecha"]:
         pf["fecha"] = date.fromisoformat(pf["fecha"])

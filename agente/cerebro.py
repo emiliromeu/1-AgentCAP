@@ -49,6 +49,7 @@ from agente.recogida_tipo_curso import (
     crear_estado as crear_estado_tipo_curso,
     guardar_tipo_curso as guardar_tipo_curso_tc,
     bloque_completo as bloque_completo_tipo_curso,
+    clau_curs,
 )
 from agente.recogida_prueba_fuego import (
     crear_estado as crear_estado_prueba_fuego,
@@ -953,15 +954,19 @@ def _contexto_prueba_fuego(estado_pf):
 
 
 def _contexto_tipo_curso(estado_tipo_curso):
-    """Genera la parte variable del system prompt para el bloque tipo de curso."""
-    tipo      = estado_tipo_curso["tipo_curso"]
+    """Genera la parte variable del system prompt para el bloque tipo de curso.
+
+    FASE 1 (dos ejes): el estado ya guarda tipo_formacio + modalitat, pero la
+    conversación con Rosa es EXACTAMENTE la de siempre (solo existe el inicial;
+    elegir mercancías/viajeros es elegir la modalidad del inicial)."""
+    modalitat = estado_tipo_curso["modalitat"]
     terminado = estado_tipo_curso["terminado"]
 
     if terminado:
-        etiqueta = "MERCANCIES" if tipo == "mercancias" else "VIATGERS"
+        etiqueta = "MERCANCIES" if modalitat == "mercancies" else "VIATGERS"
         return f"TIPUS DE CURS: COMPLETAT ({etiqueta})."
 
-    if tipo is None:
+    if modalitat is None:
         return (
             "ESTADO: pendiente de elegir el tipo de curso.\n"
             "\n"
@@ -974,7 +979,7 @@ def _contexto_tipo_curso(estado_tipo_curso):
             "Cuando Rosa elija uno, llama a guardar_tipo_curso con 'mercancias' o 'viatgers'."
         )
 
-    return f"TIPUS DE CURS: {tipo} (pendent de confirmar)."
+    return f"TIPUS DE CURS: {modalitat} (pendent de confirmar)."
 
 
 def _contexto_ajustar_inicio(estados):
@@ -1038,6 +1043,18 @@ def _contexto_ajustar_inicio(estados):
     ])
 
 
+def _te_prueba_fuego(estados):
+    """FASE 1 (dos ejes): la prueba de fuego es SOLO del inicial de
+    mercancías. Hoy equivale exactamente a la condición histórica
+    (tipo_curso == "mercancias", porque solo existe el inicial) y deja
+    preparado que ampliacio/continu de mercancías NO la tengan. Único
+    sitio del código que define esta regla."""
+    return (
+        estados["tipo_curso"]["tipo_formacio"] == "inicial"
+        and estados["tipo_curso"]["modalitat"] == "mercancies"
+    )
+
+
 BLOQUES = [
     {
         "nombre":            "tipo_curso",
@@ -1062,7 +1079,7 @@ BLOQUES = [
         "marcar_conseguido": None,
         "contexto":          _contexto_prueba_fuego,
         "validacion":        _validar_fecha_pf_en_curso,
-        "condicion":         lambda estados: estados["tipo_curso"]["tipo_curso"] == "mercancias",
+        "condicion":         _te_prueba_fuego,
     },
     {
         "nombre":            "franjas",
@@ -1445,10 +1462,13 @@ def _calcular_horas_faltantes(estados):
     justo tras franjas). Requiere que calendario y franjas estén ya completos
     — ambos lo están siempre que se llame desde estos dos sitios.
     """
-    tipo_curso = estados["tipo_curso"]["tipo_curso"]
+    # FASE 1 (dos ejes): la clave de configuración se deriva de
+    # tipo_formacio+modalitat (clau_curs) — para el inicial es el string
+    # histórico, así ensamblaje/generar_documento no cambian nada.
+    tipo_curso = clau_curs(estados["tipo_curso"])
     pf_estat = estados["prueba_fuego"]
     pf = None
-    if tipo_curso == "mercancias" and pf_estat["fecha"] is not None:
+    if _te_prueba_fuego(estados) and pf_estat["fecha"] is not None:
         pf = crear_prueba_fuego(pf_estat["fecha"], pf_estat["hora_inicio"], pf_estat["proveedor"])
     resultat_h = generar_horario(
         estados["calendario"], estados["franjas"], estados["orden"],
@@ -1573,7 +1593,9 @@ def avanzar_o_generar(estados, bloque_actual):
         }
 
     # ── Todos los bloques completos: generar el documento ──────────────────────
-    tipo_curso = estados["tipo_curso"]["tipo_curso"]
+    # FASE 1 (dos ejes): clave de configuración derivada de tipo_formacio+
+    # modalitat — para el inicial, el string histórico de siempre.
+    tipo_curso = clau_curs(estados["tipo_curso"])
 
     # ── Red de seguridad final (Parte A): ¿dan las horas para completar el curso?
     # Si el bloque "ajustar_inicio" (Parte B) ya hizo su trabajo justo tras franjas,
@@ -1597,7 +1619,7 @@ def avanzar_o_generar(estados, bloque_actual):
 
     pf_estat = estados["prueba_fuego"]
     pf = None
-    if tipo_curso == "mercancias" and pf_estat["fecha"] is not None:
+    if _te_prueba_fuego(estados) and pf_estat["fecha"] is not None:
         pf = crear_prueba_fuego(
             pf_estat["fecha"], pf_estat["hora_inicio"], pf_estat["proveedor"],
         )
