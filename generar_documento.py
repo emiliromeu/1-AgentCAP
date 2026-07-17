@@ -297,6 +297,29 @@ def _set_row_keep_with_next(row):
         for p in cell.paragraphs:
             p.paragraph_format.keep_with_next = True
 
+def _add_camp_pagina(paragraph):
+    """Afegeix un camp de Word "PAGE" al paràgraf: es recalcula sol a cada
+    pàgina (no és un número fix escrit a mà). python-docx no té una API
+    d'alt nivell per a camps, així que es construeix l'XML mínim (fldChar
+    begin/instrText/fldChar end) que Word interpreta com a número de pàgina."""
+    run = paragraph.add_run()
+    run.font.name = _FONT
+    run.font.size = Pt(9)
+
+    fld_begin = OxmlElement('w:fldChar')
+    fld_begin.set(qn('w:fldCharType'), 'begin')
+
+    instr = OxmlElement('w:instrText')
+    instr.set(qn('xml:space'), 'preserve')
+    instr.text = 'PAGE'
+
+    fld_end = OxmlElement('w:fldChar')
+    fld_end.set(qn('w:fldCharType'), 'end')
+
+    run._r.append(fld_begin)
+    run._r.append(instr)
+    run._r.append(fld_end)
+
 def _remove_para_spacing(para):
     pPr = para._p.get_or_add_pPr()
     for ex in pPr.findall(qn('w:spacing')):
@@ -419,6 +442,21 @@ def generar_document(horari_amb_professors, ruta_sortida,
     hp.paragraph_format.space_before = Pt(0)
     hp.paragraph_format.space_after  = Pt(0)
     hp.add_run().add_picture(ruta_logo, width=Inches(1.0))
+
+    # ── Footer: número de pàgina centrat, en totes les pàgines ────────────────
+    # Definit una sola vegada a la primera secció; la secció apaïsada del
+    # cronograma (doc.add_section més avall) no toca headers/footers, així que
+    # per defecte queda enllaçada ("linked to previous") i hereta aquest mateix
+    # footer -- surt a totes les pàgines del document sense repetir el codi.
+    footer = section.footer
+    fp     = footer.paragraphs[0]
+    fp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    fp.paragraph_format.space_before = Pt(0)
+    fp.paragraph_format.space_after  = Pt(0)
+    fr = fp.add_run("Pàgina ")
+    fr.font.name = _FONT
+    fr.font.size = Pt(9)
+    _add_camp_pagina(fp)
 
     # ── PORTADA ───────────────────────────────────────────────────────────────
 
