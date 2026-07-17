@@ -4,3 +4,14 @@ backgroundColor = "#0A0E1A"
 secondaryBackgroundColor = "#141C30"
 textColor = "#E8EAF0"
 primaryColor = "#5B8DEE"
+
+[browser]
+# Sin telemetría de uso: no se envían estadísticas al arrancar.
+gatherUsageStats = false
+
+[server]
+# Sin vigilancia de archivos: evita escanear/observar los ficheros del
+# proyecto, muy lento con Documents sincronizado en iCloud.
+# Contrapartida: al editar el código hay que reiniciar la app a mano
+# (no hay auto-reload). Para recuperarlo: cambiar a "auto".
+fileWatcherType = "none"
