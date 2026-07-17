@@ -663,7 +663,8 @@ def _contexto_profesores(estado_profesores):
     if profesor_general is None:
         return "\n".join([
             "=== BLOQUE ACTUAL: PROFESORES ===",
-            "(El bloque de ALUMNOS viene después de este. Ahora toca exclusivamente los PROFESORES.)",
+            "(El bloque de ALUMNOS ya se completó antes de este — no vuelvas a preguntar "
+            "por alumnos. Ahora toca exclusivamente los PROFESORES.)",
             "",
             "ESTADO DE LA RECOGIDA DE PROFESORES:",
             "  - Profesor general: pendiente",
@@ -1653,10 +1654,45 @@ def avanzar_o_generar(estados, bloque_actual):
     }
 
 
+# Fallback para procesar_turno(entrada=None). Los botones de la UI ya no
+# pasan None: inyectan nudge_cierre_por_boton, que nombra los pasos.
 _NUDGE_CONTINUAR = (
     "[El paso anterior se ha cerrado. Continúa con el siguiente paso "
     "según el estado actual — Rosa no ha escrito nada nuevo.]"
 )
+
+# Nombres de los pasos tal como se le nombran al LLM en los nudges.
+_NOMBRES_PASOS = {
+    "tipo_curso":     "TIPO DE CURSO",
+    "calendario":     "CALENDARIO",
+    "prueba_fuego":   "PRUEBA DE FUEGO",
+    "franjas":        "HORARIOS",
+    "ajustar_inicio": "AJUSTE DE INICIO",
+    "orden":          "ORDEN DE ASIGNATURAS",
+    "alumnos":        "ALUMNOS",
+    "profesores":     "PROFESORES",
+    "practicas":      "PRÁCTICAS",
+}
+
+
+def nudge_cierre_por_boton(bloque_cerrado, bloque_siguiente, resumen):
+    """
+    Mensaje que se inyecta en llm_messages cuando Rosa cierra una lista
+    (alumnos/profesores) pulsando el botón de la interfaz.
+
+    A diferencia del nudge genérico, nombra explícitamente el paso que se
+    cerró y el que toca ahora: el cierre por botón NO pasa por el LLM, así
+    que su historial se queda con la pregunta del paso viejo sin responder
+    — sin este mensaje, el modelo seguía el hilo de la conversación y
+    volvía a preguntar por el paso ya cerrado (bug del botón de alumnos).
+    """
+    nombre_cerrado   = _NOMBRES_PASOS.get(bloque_cerrado, bloque_cerrado.upper())
+    nombre_siguiente = _NOMBRES_PASOS.get(bloque_siguiente, bloque_siguiente.upper())
+    return (
+        f"[Rosa ha pulsado el botón de cerrar la lista. El paso {nombre_cerrado} "
+        f"queda COMPLETADO ({resumen}) — no vuelvas a preguntar por él. "
+        f"Ahora el paso activo es {nombre_siguiente}: haz su primera pregunta.]"
+    )
 
 
 def procesar_turno(entrada, estado_conversacion, client):

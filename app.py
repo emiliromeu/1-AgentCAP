@@ -7,6 +7,7 @@ from anthropic import Anthropic
 from agente.cerebro import (
     procesar_turno, crear_estado_conversacion, avanzar_o_generar,
     marcar_terminado_alumnos, marcar_terminado_profesores,
+    nudge_cierre_por_boton,
 )
 from agente.persistencia import guardar_estado, cargar_estado, eliminar_estado
 
@@ -203,9 +204,24 @@ def _cerrar_lista_abierta(nombre_bloque, marcar_terminado_fn, mensaje_chat, clie
         )
     elif resultado["avanzo"]:
         # Bloque nuevo activo (p.ej. alumnos -> profesores): el agente pregunta
-        # solo, sin esperar a que Rosa escriba nada.
+        # solo, sin esperar a que Rosa escriba nada. El nudge nombra el paso
+        # cerrado y el nuevo: el historial del LLM aún tiene la pregunta del
+        # paso viejo sin responder, y con el nudge genérico seguía ese hilo y
+        # la repetía en vez de avanzar.
+        if nombre_bloque == "alumnos":
+            n = len(estados["alumnos"]["alumnos"])
+            resumen = f"{n} alumno{'s' if n != 1 else ''} en la lista"
+        else:
+            n_exc = len(estados["profesores"]["excepciones"])
+            resumen = (
+                f"profesor general {estados['profesores']['profesor_general']}, "
+                f"{n_exc} sustitucion{'es' if n_exc != 1 else ''}"
+            )
+        nudge = nudge_cierre_por_boton(
+            nombre_bloque, resultado["bloque_actual"], resumen,
+        )
         with st.spinner("Pensando…"):
-            resultado_llm = procesar_turno(None, st.session_state.conv_state, client)
+            resultado_llm = procesar_turno(nudge, st.session_state.conv_state, client)
         st.session_state.conv_state = resultado_llm["estado"]
         if resultado_llm["terminado"]:
             st.session_state.terminado = True
