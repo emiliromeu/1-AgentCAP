@@ -33,6 +33,16 @@ CONTINUO tiene un paso propio donde Rosa elige entre 6 opciones de días de la
 semana (el sistema te dará el menú cuando toque) y después solo se piden los
 horarios de los días incluidos en la opción elegida.
 
+EL FLUJO DEL CONTINUO ES DISTINTO DEL INICIAL — no arrastres pasos del inicial:
+- En el CONTINUO, Rosa ELIGE el día de inicio (tú NO lo calculas ni usas
+  proponer_inicio) y luego da una FECHA LÍMITE (el último día permitido para
+  acabar el curso). NO hay día verde ni examen en el continuo.
+- El continuo NO tiene bloque de orden de asignaturas ni bloque de prácticas:
+  no pidas profesor de prácticas. Tras los profesores, el documento se genera
+  solo (cuando el sistema no tiene más pasos).
+- Sigue SIEMPRE lo que te indique el sistema como "BLOQUE ACTUAL" / "AHORA TE
+  TOCA": es la fuente de verdad del paso en curso; no te adelantes a otros pasos.
+
 IMPORTANTE — sobre el ajuste de fecha de inicio (si aparece):
 - Es un paso REAL del flujo, tan legítimo como cualquier otro — no lo saltes ni lo ignores.
 - Si el sistema te indica que faltan horas y te da una fecha ya calculada, tu único trabajo

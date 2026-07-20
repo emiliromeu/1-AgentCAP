@@ -79,6 +79,7 @@ from herramientas.calendario import (
     validar_inicio_antes_amarillo,
     validar_inicio_no_domingo,
     validar_verde_despues_amarillo,
+    validar_limite_posterior_a_inicio,
 )
 
 load_dotenv()
@@ -566,22 +567,77 @@ def _instrucciones_fecha_inicio(estado):
     ])
 
 
-def _contexto_calendario(estado):
-    """Genera la parte variable del system prompt para el bloque calendario."""
-    lineas = ["ESTADO DE LA RECOGIDA DEL BLOQUE CALENDARIO:"]
+# Etiquetas del continuo (fecha límite en vez de día amarillo; sin día verde).
+_NOMBRES_LEGIBLES_CONTINU = {
+    "fecha_inicio": "día de inicio del curso",
+    "dia_amarillo": "fecha límite (último día permitido para acabar el curso)",
+    "festivos":     "festivos del período",
+}
 
-    for nombre in ["dia_amarillo", "dia_verde", "fecha_inicio", "festivos"]:
-        etiqueta = _NOMBRES_LEGIBLES[nombre]
+
+def _instr_inicio_continuo():
+    """Continuo: Rosa ELIGE el día de inicio (sin cálculo ni proponer_inicio)."""
+    return "\n".join([
+        "Pregúntale a Rosa qué día quiere EMPEZAR el curso. Ella lo elige libremente.",
+        "NO uses proponer_inicio ni calcules nada: en el continuo la fecha de inicio la decide Rosa.",
+        "Cuando te dé la fecha, valídala con validar_fecha (solo comprueba que sea una fecha real).",
+        "Si es válida, repítesela para confirmar ('¿Empezamos el DD/MM/AAAA, correcto?').",
+        "Cuando Rosa confirme, llama a confirmar_dato con nombre_dato='fecha_inicio' y la fecha.",
+    ])
+
+
+def _instr_fecha_limite_continuo(estado):
+    """Continuo: Rosa da la fecha límite (tope). Se guarda en dia_amarillo."""
+    inicio = estado["fecha_inicio"]["valor"]
+    return "\n".join([
+        "Pregúntale a Rosa la FECHA LÍMITE: el último día permitido para tener el curso acabado.",
+        f"Tiene que ser POSTERIOR al día de inicio ({inicio}).",
+        "Cuando te dé la fecha, valídala con validar_fecha; repítela para confirmar; y con "
+        "confirmar_dato guarda nombre_dato='dia_amarillo' con esa fecha "
+        "(es el tope que usa el sistema para comprobar si caben las horas).",
+        "Si el sistema la rechaza por no ser posterior al inicio, explícaselo a Rosa y pídele otra.",
+    ])
+
+
+def _contexto_calendario(estados):
+    """Genera la parte variable del system prompt para el bloque calendario.
+
+    Ramifica según tipo_formacio (recibe TODOS los estados, ver _construir_contexto_estado):
+      - inicial: día amarillo → día verde (examen) → fecha inicio (calculada) → festivos.
+      - continuo: día de inicio (Rosa elige) → fecha límite → festivos. Sin día verde
+                  (pre-marcado N/A al guardar el tipo)."""
+    estado   = estados["calendario"]
+    continuo = estados["tipo_curso"]["tipo_formacio"] == "continu"
+
+    if continuo:
+        orden    = ["fecha_inicio", "dia_amarillo", "festivos"]
+        etiquetas = _NOMBRES_LEGIBLES_CONTINU
+    else:
+        orden    = ["dia_amarillo", "dia_verde", "fecha_inicio", "festivos"]
+        etiquetas = _NOMBRES_LEGIBLES
+
+    lineas = ["ESTADO DE LA RECOGIDA DEL BLOQUE CALENDARIO:"]
+    for nombre in orden:
         entrada = estado[nombre]
         if entrada["conseguido"]:
-            lineas.append(f"  - {etiqueta}: YA CONSEGUIDO → {entrada['valor']}")
+            lineas.append(f"  - {etiquetas[nombre]}: YA CONSEGUIDO → {entrada['valor']}")
         else:
-            lineas.append(f"  - {etiqueta}: pendiente")
+            lineas.append(f"  - {etiquetas[nombre]}: pendiente")
 
-    siguiente = siguiente_dato_pendiente(estado)
-    if siguiente:
-        etiqueta = _NOMBRES_LEGIBLES[siguiente]
-        lineas.append(f"\nAHORA TE TOCA: conseguir el {etiqueta}.")
+    siguiente = next((n for n in orden if not estado[n]["conseguido"]), None)
+    if siguiente is None:
+        lineas.append("\nTodos los datos del bloque calendario están conseguidos.")
+        return "\n".join(lineas)
+
+    lineas.append(f"\nAHORA TE TOCA: conseguir el {etiquetas[siguiente]}.")
+    if continuo:
+        if siguiente == "fecha_inicio":
+            lineas.append(_instr_inicio_continuo())
+        elif siguiente == "dia_amarillo":
+            lineas.append(_instr_fecha_limite_continuo(estado))
+        else:  # festivos (reutiliza el helper: usa fecha_inicio y dia_amarillo=límite)
+            lineas.append(_instrucciones_festivos(estado))
+    else:
         if siguiente == "fecha_inicio":
             lineas.append(_instrucciones_fecha_inicio(estado))
         elif siguiente == "festivos":
@@ -590,8 +646,6 @@ def _contexto_calendario(estado):
             lineas.append(_instrucciones_dia_verde(estado))
         else:
             lineas.append(_instrucciones_genericas(siguiente))
-    else:
-        lineas.append("\nTodos los datos del bloque calendario están conseguidos.")
 
     return "\n".join(lineas)
 
@@ -881,8 +935,22 @@ _COMPROBACIONES_COHERENCIA = {
 def _verificar_coherencia(nombre_dato, valor, estados):
     """
     Devuelve el resultado de coherencia si el dato tiene comprobación, None si no aplica.
-    Consultar _COMPROBACIONES_COHERENCIA para ver qué datos se comprueban.
+
+    Ramifica según tipo_formacio, porque en el continuo el ORDEN de recogida es
+    distinto (inicio primero, luego fecha límite):
+      - continuo: fecha_inicio → solo que no sea domingo (aún no hay tope que comparar);
+                  dia_amarillo (fecha límite) → posterior al día de inicio.
+      - inicial : como siempre (dia_verde > amarillo; fecha_inicio no-domingo y < amarillo).
     """
+    if estados["tipo_curso"]["tipo_formacio"] == "continu":
+        if nombre_dato == "fecha_inicio":
+            return validar_inicio_no_domingo(valor)
+        if nombre_dato == "dia_amarillo":
+            return validar_limite_posterior_a_inicio(
+                valor, estados["calendario"]["fecha_inicio"]["valor"]
+            )
+        return None
+
     comprobacion = _COMPROBACIONES_COHERENCIA.get(nombre_dato)
     if comprobacion is None:
         return None
@@ -1189,6 +1257,8 @@ BLOQUES = [
         "marcar_conseguido": marcar_conseguido_orden,
         "contexto":          _contexto_orden,
         "validacion":        None,
+        # El continuo no confirma orden de asignaturas (su plantilla ya lo fija).
+        "condicion":         lambda estados: estados["tipo_curso"]["tipo_formacio"] != "continu",
     },
     {
         "nombre":            "alumnos",
@@ -1213,18 +1283,23 @@ BLOQUES = [
         "marcar_conseguido": None,
         "contexto":          _contexto_practicas,
         "validacion":        None,
+        # El continuo no tiene prácticas aparte (van incluidas en las asignaturas):
+        # al saltarse este bloque, tras profesores se genera el documento directamente.
+        "condicion":         lambda estados: estados["tipo_curso"]["tipo_formacio"] != "continu",
     },
 ]
 
 
 def _construir_contexto_estado(bloque_actual, estados):
     """Elige el constructor de contexto según el bloque que está en curso."""
-    # Caso especial: "ajustar_inicio" no recoge un dato propio, sino que ajusta
-    # calendario/franjas ya existentes — necesita ver TODOS los estados (no solo
-    # su porción) para calcular cuántas horas faltan y proponer una fecha. Los
-    # otros 8 bloques siguen recibiendo solo su propia porción, sin cambios.
+    # Caso especial: "ajustar_inicio" y "calendario" reciben TODOS los estados
+    # (no solo su porción). ajustar_inicio los necesita para calcular horas que
+    # faltan; calendario para ramificar según tipo_formacio (inicial vs continuo).
+    # Los otros bloques siguen recibiendo solo su propia porción, sin cambios.
     if bloque_actual == "ajustar_inicio":
         return _contexto_ajustar_inicio(estados)
+    if bloque_actual == "calendario":
+        return _contexto_calendario(estados)
     bloque = next(b for b in BLOQUES if b["nombre"] == bloque_actual)
     return bloque["contexto"](estados[bloque_actual])
 
@@ -1262,6 +1337,10 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
             # histórico) y Rosa nunca ve el menú de opciones.
             if tipo_formacio != "continu":
                 fijar_dias_todos_franjas(estados["franjas"])
+            else:
+                # El continuo NO tiene examen: el día verde se pre-marca N/A para
+                # que el bloque calendario no lo pregunte y se complete sin él.
+                estados["calendario"]["dia_verde"] = {"conseguido": True, "valor": None}
             return {"tipo_guardado": True, "tipo": tipo, "tipo_formacio": tipo_formacio}
         if tipo_formacio == "ampliacio":
             return {"tipo_guardado": False, "motivo": (

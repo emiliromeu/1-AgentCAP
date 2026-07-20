@@ -253,3 +253,36 @@ def validar_verde_despues_amarillo(dia_verde_texto, dia_amarillo_texto):
             "Revisa la fecha del examen o el último día del plan."
         ),
     }
+
+
+def validar_limite_posterior_a_inicio(fecha_limite_texto, fecha_inicio_texto):
+    """
+    (CAP continuo) Comprueba que la fecha límite (último día permitido para acabar
+    el curso) sea estrictamente posterior al día de inicio elegido por Rosa.
+    Igual o anterior es incoherente: el curso necesita al menos un día.
+
+    Devuelve:
+        {'coherente': True,  'mensaje': <str>}  si límite > inicio
+        {'coherente': False, 'mensaje': <str>}  si límite <= inicio
+    """
+    limite = parsear_fecha(fecha_limite_texto)["fecha"]
+    inicio = parsear_fecha(fecha_inicio_texto)["fecha"]
+
+    if limite > inicio:
+        return {
+            "coherente": True,
+            "mensaje": (
+                f"La fecha límite ({limite.strftime(_FORMATO)}) va después del día "
+                f"de inicio ({inicio.strftime(_FORMATO)}). Correcto."
+            ),
+        }
+
+    return {
+        "coherente": False,
+        "mensaje": (
+            f"La fecha límite ({limite.strftime(_FORMATO)}) tiene que ir después del "
+            f"día de inicio ({inicio.strftime(_FORMATO)}). El curso empieza el "
+            f"{inicio.strftime(_FORMATO)}, así que la fecha límite debe ser posterior. "
+            "Revisa la fecha límite o el día de inicio."
+        ),
+    }
