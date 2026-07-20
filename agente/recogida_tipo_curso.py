@@ -1,12 +1,12 @@
 # Gestiona el estado de recogida del tipo de curso (primer bloque del pipeline).
 #
-# FASE 1 (dos ejes): un curso es la combinación de DOS ejes independientes:
+# Dos ejes: un curso es la combinación de DOS ejes independientes:
 #   tipo_formacio : "inicial" | "ampliacio" | "continu"
 #   modalitat     : "mercancies" | "viatgers"
-# De momento solo existe en la práctica el tipo "inicial" (130h) — la tool que
-# usa el LLM (guardar_tipo_curso, con los valores históricos "mercancias"/
-# "viatgers") sigue igual y mapea a inicial+modalitat. "ampliacio" y "continu"
-# se añadirán en fases siguientes; la estructura ya queda preparada.
+# FASE 3a: existen "inicial" (130h) y "continu" (35h, plantillas separadas).
+# "ampliacio" como curso propio aún no tiene configuración — la tool lo
+# rechaza con motivo claro (hoy la ampliación es un tipo de alumno dentro
+# del inicial, no un curso).
 #
 # Estado:
 #   tipo_formacio : str | None — "inicial" / "ampliacio" / "continu".
@@ -21,13 +21,15 @@ MODALITATS_VALIDES = {"mercancies", "viatgers"}
 _MODALITAT_DES_DE_TOOL = {"mercancias": "mercancies", "viatgers": "viatgers"}
 
 # Clave de configuración que consumen ensamblaje.py y generar_documento.py
-# (_CONF_CURSO, _AMPLIACION_CURS, _NOM_CURS, _MATERIAS_CURS). En fase 1 solo
-# el inicial tiene configuración: su clave es el string histórico de siempre,
-# así NINGÚN consumidor cambia. Cuando existan ampliacio/continu, este mapa
-# será el único sitio que decida qué configuración usa cada combinación.
+# (_CONF_CURSO, _AMPLIACION_CURS, _NOM_CURS, _MATERIAS_CURS). Para el inicial
+# es el string histórico de siempre (ningún consumidor viejo cambia); el
+# continuo usa claves propias que apuntan a sus plantillas/catálogos separados.
+# Este mapa es el ÚNICO sitio que decide qué configuración usa cada combinación.
 _CLAU_CONFIG = {
     ("inicial", "mercancies"): "mercancias",
     ("inicial", "viatgers"):   "viatgers",
+    ("continu", "mercancies"): "continu_mercancies",
+    ("continu", "viatgers"):   "continu_viatgers",
 }
 
 
@@ -39,16 +41,21 @@ def crear_estado():
     }
 
 
-def guardar_tipo_curso(estado, tipo):
+def guardar_tipo_curso(estado, tipo, tipo_formacio="inicial"):
     """
-    Punto de entrada de la tool histórica del LLM ("mercancias"/"viatgers").
-    Guarda inicial+modalitat si es válido. Devuelve True si se ha guardado.
-    Marca terminado automáticamente al guardar.
+    Punto de entrada de la tool del LLM. `tipo` es la modalidad histórica
+    ("mercancias"/"viatgers"); `tipo_formacio` es "inicial" o "continu"
+    (por defecto "inicial", el comportamiento histórico).
+
+    Solo guarda combinaciones CON configuración (las de _CLAU_CONFIG): así
+    "ampliacio" — o cualquier valor futuro sin plantillas — se rechaza aquí
+    y el flujo nunca llega a la generación con una clave inexistente.
+    Devuelve True si se ha guardado; marca terminado automáticamente.
     """
     modalitat = _MODALITAT_DES_DE_TOOL.get(tipo)
-    if modalitat is None:
+    if modalitat is None or (tipo_formacio, modalitat) not in _CLAU_CONFIG:
         return False
-    estado["tipo_formacio"] = "inicial"
+    estado["tipo_formacio"] = tipo_formacio
     estado["modalitat"]     = modalitat
     estado["terminado"]     = True
     return True

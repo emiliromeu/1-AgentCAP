@@ -112,6 +112,16 @@ def _deserialitzar_estados(estados: dict) -> dict:
         tc["tipo_formacio"] = "inicial" if vell is not None else None
         tc["modalitat"] = {"mercancias": "mercancies", "viatgers": "viatgers"}.get(vell)
 
+    # FASE 3b: sessions desades abans de l'opció de dies no porten "dias_semana"
+    # — se'ls fixa l'opció 5 (dilluns a dissabte, el comportament històric).
+    # Idempotent: les sessions noves ja porten la clau i passen netes.
+    fr = estados.get("franjas", {})
+    if fr and "dias_semana" not in fr:
+        fr["dias_semana"] = {
+            "conseguido": True,
+            "valor": {"opcion": 5, "dias": [0, 1, 2, 3, 4, 5]},
+        }
+
     pf = estados.get("prueba_fuego", {})
     if isinstance(pf.get("fecha"), str) and pf["fecha"]:
         pf["fecha"] = date.fromisoformat(pf["fecha"])

@@ -8,7 +8,17 @@ from datetime import datetime, date, timedelta
 from datos.asignaturas          import ASIGNATURAS
 from datos.asignaturas_viatgers import ASIGNATURAS_VIATGERS
 from datos.plantilla_mercancias import PLANTILLA_MERCANCIAS, OBLIGATORIAS_FINDE_MERCANCIAS
-from datos.plantilla_viatgers   import PLANTILLA_VIATGERS,   OBLIGATORIAS_FINDE_VIATGERS
+from datos.plantilla_viatgers   import (
+    PLANTILLA_VIATGERS, OBLIGATORIAS_FINDE_VIATGERS, PREFERENTES_FINDE_VIATGERS,
+)
+from datos.asignaturas_continuo_mercancias import ASIGNATURAS_CONTINUO_MERCANCIAS
+from datos.asignaturas_continuo_viatgers   import ASIGNATURAS_CONTINUO_VIATGERS
+from datos.plantilla_continuo_mercancias import (
+    PLANTILLA_CONTINUO_MERCANCIAS, OBLIGATORIAS_FINDE_CONTINUO_MERCANCIAS,
+)
+from datos.plantilla_continuo_viatgers import (
+    PLANTILLA_CONTINUO_VIATGERS, OBLIGATORIAS_FINDE_CONTINUO_VIATGERS,
+)
 from herramientas.motor_horario import (
     construir_dias_lectivos,
     construir_franjas_semanales,
@@ -66,9 +76,21 @@ def aplicar_profesores(horario_detallado, estado_profesores):
     return horario_detallado
 
 
+# Cada entrada: (plantilla, obligatorias_finde, asignaturas, preferentes_finde).
+# preferentes_finde (Regla 2) solo lo usa el inicial de viajeros; el resto pasa
+# un set vacío → misma colocación de hoy (byte-idéntica).
 _CONF_CURSO = {
-    "mercancias": (PLANTILLA_MERCANCIAS, OBLIGATORIAS_FINDE_MERCANCIAS, ASIGNATURAS),
-    "viatgers":   (PLANTILLA_VIATGERS,   OBLIGATORIAS_FINDE_VIATGERS,   ASIGNATURAS_VIATGERS),
+    "mercancias": (PLANTILLA_MERCANCIAS, OBLIGATORIAS_FINDE_MERCANCIAS, ASIGNATURAS, frozenset()),
+    "viatgers":   (PLANTILLA_VIATGERS,   OBLIGATORIAS_FINDE_VIATGERS,   ASIGNATURAS_VIATGERS,
+                   PREFERENTES_FINDE_VIATGERS),
+    # CAP continu (35h): plantilles i catàlegs SEPARATS del inicial. Sense
+    # prova de foc (el gate de generar_horario només aplica PF a "mercancias").
+    "continu_mercancies": (PLANTILLA_CONTINUO_MERCANCIAS,
+                           OBLIGATORIAS_FINDE_CONTINUO_MERCANCIAS,
+                           ASIGNATURAS_CONTINUO_MERCANCIAS, frozenset()),
+    "continu_viatgers":   (PLANTILLA_CONTINUO_VIATGERS,
+                           OBLIGATORIAS_FINDE_CONTINUO_VIATGERS,
+                           ASIGNATURAS_CONTINUO_VIATGERS, frozenset()),
 }
 
 
@@ -88,7 +110,7 @@ def generar_horario(estado_calendario, estado_franjas, estado_orden,
     """
     if tipo_curso not in _CONF_CURSO:
         raise ValueError(f"tipo_curso desconegut: {tipo_curso!r}. Valors: {list(_CONF_CURSO)}")
-    plantilla, obligatorias_finde, asignaturas = _CONF_CURSO[tipo_curso]
+    plantilla, obligatorias_finde, asignaturas, preferentes_finde = _CONF_CURSO[tipo_curso]
 
     # ── Paso 1: puentes — de estados del cerebro a formatos del motor ─────────
     dias    = construir_dias_lectivos(estado_calendario)
@@ -98,13 +120,13 @@ def generar_horario(estado_calendario, estado_franjas, estado_orden,
     pf = prueba_fuego if (tipo_curso == "mercancias" and prueba_fuego is not None) else None
     plantilla_motor = preparar_plantilla_con_prueba_fuego(plantilla, pf)
 
-    cola_semana, cola_finde = construir_colas_desde_plantilla(
-        plantilla_motor, asignaturas, obligatorias_finde
+    cola_semana, cola_finde, cola_pref = construir_colas_desde_plantilla(
+        plantilla_motor, asignaturas, obligatorias_finde, preferentes_finde
     )
 
     # ── Paso 2: colocación gruesa — qué materia va en qué día y cuántas horas ─
     resultado = colocar_materias_dos_colas(dias, franjas, cola_semana, cola_finde,
-                                           prueba_fuego=pf)
+                                           cola_pref=cola_pref, prueba_fuego=pf)
 
     # ── Paso 3: detalle — bajar a tramos horarios con descansos ──────────────
     horario = detallar_horario(resultado["colocaciones"], franjas)
@@ -124,7 +146,7 @@ def horas_totales_plantilla(tipo_curso):
     """
     if tipo_curso not in _CONF_CURSO:
         raise ValueError(f"tipo_curso desconegut: {tipo_curso!r}. Valors: {list(_CONF_CURSO)}")
-    plantilla, _, _ = _CONF_CURSO[tipo_curso]
+    plantilla, _, _, _ = _CONF_CURSO[tipo_curso]
     return sum(float(h) for _, h in plantilla)
 
 

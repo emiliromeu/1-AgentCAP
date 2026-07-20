@@ -19,8 +19,8 @@ ASIGNATURAS_VIATGERS = [
     {"codigo": "3.6",       "nombre": "Imatge de marca",                            "horas": "3"},
     {"codigo": "3.8",       "nombre": "Entorn econòmic de viatgers",                "horas": "15"},
     {"codigo": "Mòdul 1",   "nombre": "Sensibilització per a la discapacitat",      "horas": "10"},
-    {"codigo": "Mòdul 2",   "nombre": "Transport Escolar",                          "horas": "10"},
-    {"codigo": "Mòdul 3",   "nombre": "Primers Auxilis",                            "horas": "8"},
+    {"codigo": "2 Mòdul 2", "nombre": "Transport Escolar",                          "horas": "10"},
+    {"codigo": "3 Mòdul 3", "nombre": "Primers Auxilis",                            "horas": "8"},
     {"codigo": "Mòdul 5",   "nombre": "Tacògraf Digital",                           "horas": "8"},
 ]
 

@@ -68,8 +68,10 @@ _AMPLIACION_CURS = {
 # "QUALIFICACIÓ INICIAL ...". Abans estava hardcodejat a "MERCADERIES" sempre,
 # fins i tot en documents de viatgers.
 _NOM_CURS = {
-    "mercancias": "MERCADERIES",
-    "viatgers":   "VIATGERS",
+    "mercancias":         "MERCADERIES",
+    "viatgers":           "VIATGERS",
+    "continu_mercancies": "MERCADERIES",
+    "continu_viatgers":   "VIATGERS",
 }
 
 # Text llarg de la línia "CURS:" de portada, només per a viatgers (mercaderies
@@ -80,6 +82,47 @@ _TEXT_CURS_PORTADA_VIATGERS = (
     "FORM. MATERIA DE SENSIBIL. VIATGERS AMB DISCAPAC / FORM. TRANSPORTE "
     "ESCOLAR, PRIMERS AUXILIS I TACOGRAF DIG."
 )
+
+# Línia "CURS:" de portada del CONTINU (35h) — textos LITERALS dels documents
+# oficials (inspecció telemàtica): es reprodueixen tal qual, sense "corregir"
+# res (ni la repetició de "Transports de Viatgers" al de viatgers).
+_TEXT_CURS_PORTADA_CONTINU = {
+    "continu_mercancies": (
+        "Formació contínua 0000010629 Transports de Mercaderies, Formació "
+        "complementaria Mòdul 10 (Sensibilització i Educació Viaria)"
+    ),
+    "continu_viatgers": (
+        "Transports de Viatgers 0000010627 Transports de Viatgers, Formació "
+        "complementaria Mòdul 6 (Sensibilització i Educació Viaria)"
+    ),
+}
+
+# Línia "FORMACIÓ COMPLEMENTÀRIA:" de portada per al continu (el inicial manté
+# el text estàtic de DADES_CURS).
+_FORMACIO_CURS_CONTINU = {
+    "continu_mercancies": "Mòdul 10 (Sensibilització i Educació Viària)",
+    "continu_viatgers":   "Mòdul 6 (Sensibilització i Educació Viària)",
+}
+
+# Durada de portada segons curs (el inicial manté el text històric).
+_DURADA_CURS = {
+    "continu_mercancies": "35 hores",
+    "continu_viatgers":   "35 hores",
+}
+
+# Línia de curs del bloc COMUNICACIONS segons curs. El de viatgers es corregeix
+# a "VIATGERS" (l'original de la plantilla deia "MERCADERIES MÒDUL 6" per error
+# de qui la va fer — aquí SÍ es corregeix, no és res que la inspecció esperi).
+_TEXT_CURS_COMUNICACIONS = {
+    "continu_mercancies": "CURS FORMACIÓ CONTÍNUA MERCADERIES MÒDUL 10",
+    "continu_viatgers":   "CURS FORMACIÓ CONTÍNUA VIATGERS MÒDUL 6",
+}
+
+# Etiqueta d'hores del títol "RELACIÓ ALUMNES ..." segons curs.
+_HORES_CURS = {
+    "continu_mercancies": "35H",
+    "continu_viatgers":   "35H",
+}
 
 # ── Cronograma: materials i categories ───────────────────────────────────────
 
@@ -126,8 +169,8 @@ MATERIAS_CRONOGRAMA_VIATGERS = [
     ("3.6",       "Imatge marca"),
     ("3.8",       "Entorn econ. v."),
     ("Mòdul 1",   "Sensib. discap."),
-    ("Mòdul 2",   "Transport Esc."),
-    ("Mòdul 3",   "Primers Aux."),
+    ("2 Mòdul 2", "Transport Esc."),
+    ("3 Mòdul 3", "Primers Aux."),
     ("Mòdul 5",   "Tacògraf Dig."),
 ]
 
@@ -138,9 +181,43 @@ CATEGORIES_CRONOGRAMA_VIATGERS = [
     ("FORMACIÓ COMPLEMENTÀRIA VIATGERS",                             15, 18),
 ]
 
+# Cronograma del CONTINU (35h): 6 columnes — 5 objectius obligatoris + el bloc
+# complementari. Etiquetes curtes com als altres cronogrames.
+MATERIAS_CRONOGRAMA_CONTINU_MERC = [
+    ("3.1",      "Riscos/acc."),
+    ("3.4",      "Aptitud"),
+    ("1.2",      "Disp. seg."),
+    ("1.3",      "Optim. consum"),
+    ("2.1",      "Entorn social"),
+    ("Mòdul 10", "Sensibilització"),
+]
+
+CATEGORIES_CRONOGRAMA_CONTINU_MERC = [
+    ("FORMACIÓ OBLIGATÒRIA (MÒDULS 1, 2 I 3)", 0, 4),
+    ("FORMACIÓ COMPLEMENTÀRIA MERCADERIES",    5, 5),
+]
+
+MATERIAS_CRONOGRAMA_CONTINU_VIAT = [
+    ("3.1",     "Riscos/acc."),
+    ("3.4",     "Aptitud"),
+    ("1.2",     "Disp. seg."),
+    ("1.3",     "Optim. consum"),
+    ("2.1",     "Entorn social"),
+    ("Mòdul 6", "Sensibilització"),
+]
+
+CATEGORIES_CRONOGRAMA_CONTINU_VIAT = [
+    ("FORMACIÓ OBLIGATÒRIA (MÒDULS 1, 2 I 3)", 0, 4),
+    ("FORMACIÓ COMPLEMENTÀRIA VIATGERS",       5, 5),
+]
+
 _MATERIAS_CURS = {
     "mercancias": (MATERIAS_CRONOGRAMA,         CATEGORIES_CRONOGRAMA),
     "viatgers":   (MATERIAS_CRONOGRAMA_VIATGERS, CATEGORIES_CRONOGRAMA_VIATGERS),
+    "continu_mercancies": (MATERIAS_CRONOGRAMA_CONTINU_MERC,
+                           CATEGORIES_CRONOGRAMA_CONTINU_MERC),
+    "continu_viatgers":   (MATERIAS_CRONOGRAMA_CONTINU_VIAT,
+                           CATEGORIES_CRONOGRAMA_CONTINU_VIAT),
 }
 
 # Amplades per al cronograma (pàgina apaïsada, marges 0,25")
@@ -297,6 +374,70 @@ def _set_row_keep_with_next(row):
         for p in cell.paragraphs:
             p.paragraph_format.keep_with_next = True
 
+def _set_row_cant_split(row):
+    """Marca la fila amb w:cantSplit perquè el seu contingut no es parteixi entre
+    dues pàgines. Word MAI parteix una fila amb cantSplit: si no hi cap al que
+    resta de pàgina, la mou sencera a la següent. Per fer un DIA indivisible
+    (files d'hores + total), es posa cada dia dins una taula imbricada en UNA
+    sola fila externa amb cantSplit (veure _bloc_dia_indivisible)."""
+    trPr = row._tr.get_or_add_trPr()
+    if trPr.find(qn('w:cantSplit')) is None:
+        trPr.append(OxmlElement('w:cantSplit'))
+
+def _remove_table_borders(table):
+    """Treu totes les vores d'una taula (les posarà la taula imbricada de dins)."""
+    tblPr   = table._tbl.tblPr
+    borders = tblPr.find(qn('w:tblBorders'))
+    if borders is None:
+        borders = OxmlElement('w:tblBorders')
+        tblPr.append(borders)
+    for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        e = borders.find(qn('w:' + edge))
+        if e is None:
+            e = OxmlElement('w:' + edge)
+            borders.append(e)
+        e.set(qn('w:val'), 'nil')
+
+def _min_para_height(p):
+    """Redueix un paràgraf buit a alçada mínima (marca de paràgraf a 1pt, sense
+    espaiat) — per al <w:p> que Word obliga a deixar després d'una taula
+    imbricada dins d'una cel·la. `p` és l'element CT_P (no un Paragraph)."""
+    pPr = p.get_or_add_pPr()
+    for ex in pPr.findall(qn('w:spacing')):
+        pPr.remove(ex)
+    sp = OxmlElement('w:spacing')
+    sp.set(qn('w:before'), '0')
+    sp.set(qn('w:after'), '0')
+    sp.set(qn('w:line'), '20')            # 20 twips = 1pt d'alçada de línia
+    sp.set(qn('w:lineRule'), 'exact')
+    pPr.append(sp)                        # spacing va abans de rPr (ordre d'esquema)
+    rPr = pPr.find(qn('w:rPr'))
+    if rPr is None:
+        rPr = OxmlElement('w:rPr')
+        pPr.append(rPr)
+    for tag in ('w:sz', 'w:szCs'):
+        e = rPr.find(qn(tag))
+        if e is None:
+            e = OxmlElement(tag)
+            rPr.append(e)
+        e.set(qn('w:val'), '2')           # 2 half-points = 1pt
+
+def _taula_imbricada_neta(cell, grid):
+    """Crea una taula imbricada dins `cell` amb la graella `grid`, enganxada a
+    dalt: elimina el paràgraf buit que la cel·la té abans de la taula i
+    minimitza el que Word deixa després. Retorna la taula imbricada."""
+    nested = cell.add_table(rows=0, cols=len(grid))
+    _set_table_width(nested, sum(grid))
+    _set_tbl_grid(nested, grid)
+    _set_table_cell_margin(nested, top=60, right=90, bottom=60, left=90)
+    tc = cell._tc
+    ps = tc.findall(qn('w:p'))
+    if ps:
+        tc.remove(ps[0])                       # paràgraf buit ABANS de la taula
+    for p in tc.findall(qn('w:p')):            # el/s de DESPRÉS -> alçada mínima
+        _min_para_height(p)
+    return nested
+
 def _add_camp_pagina(paragraph):
     """Afegeix un camp de Word "PAGE" al paràgraf: es recalcula sol a cada
     pàgina (no és un número fix escrit a mà). python-docx no té una API
@@ -370,19 +511,20 @@ def _write_dia_cell(cell, dia_setmana, data_text):
 
 # ── Constructors de files de la taula ─────────────────────────────────────────
 
-def _afegir_fila_tram(table, hora_txt, tema_txt, prof_txt, tema_color=None):
+def _afegir_fila_tram(table, hora_txt, tema_txt, prof_txt, tema_color=None,
+                      tema_red_suffix=None):
     """Afegeix una fila de tram (columnes HORA, TEMA, PROF; DIA s'omple per separat).
-    tema_color: color del run TEMA (None = negre). Hora i professor sempre en negre."""
+    tema_color: color del run TEMA (None = negre). Hora i professor sempre en negre.
+    tema_red_suffix: text extra en vermell al final de la cel·la TEMA (p. ex.
+    ' (1h pràctica)' per marcar la pràctica del 2.1 al continu)."""
     row = table.add_row()
-    for cell, txt, w, color in zip(
-        row.cells[1:],
-        [hora_txt,  tema_txt,   prof_txt],
-        [_W_HORA,   _W_TEMA,    _W_PROF],
-        [None,      tema_color, None],
-    ):
+    hora_cell, tema_cell, prof_cell = row.cells[1:]
+    for cell, w in ((hora_cell, _W_HORA), (tema_cell, _W_TEMA), (prof_cell, _W_PROF)):
         _set_cell_width(cell, w)
         _add_borders(cell)
-        _cell_text(cell, txt, color=color)
+    _cell_text(hora_cell, hora_txt)
+    _cell_text(tema_cell, tema_txt, color=tema_color, red_suffix=tema_red_suffix)
+    _cell_text(prof_cell, prof_txt)
     return row
 
 def _afegir_fila_total(table, total_txt):
@@ -401,6 +543,111 @@ def _afegir_fila_total(table, total_txt):
 
 
 # ── Generador principal ───────────────────────────────────────────────────────
+
+def _es_continuo(tipo_curso):
+    """True si el curs és de formació contínua (35h)."""
+    return str(tipo_curso).startswith("continu")
+
+
+def _omplir_cel_lin(cell, linies, bold=False, size=11,
+                    align=WD_ALIGN_PARAGRAPH.CENTER):
+    """
+    Omple una cel·la amb una o més línies. Cada línia és (text, color); color
+    None = negre. Substitueix el paràgraf per defecte per la primera línia.
+    """
+    for k, (txt, color) in enumerate(linies):
+        p = cell.paragraphs[0] if k == 0 else cell.add_paragraph()
+        p.alignment = align
+        _remove_para_spacing(p)
+        r = p.add_run(txt)
+        r.bold      = bold
+        r.font.name = _FONT
+        r.font.size = Pt(size)
+        if color is not None:
+            r.font.color.rgb = color
+
+
+# Amplades de la taula de desglossament del continu (pàgina vertical, 3 columnes).
+_WD_DESG = [2400, 4800, 3200]   # 10400 DXA, com la taula d'horari
+
+def _afegir_taula_desglossament(doc, tipo_curso):
+    """
+    Taula oficial de desglossament d'hores del CAP CONTINU (substitueix el
+    cronograma del inicial): formació obligatòria (Mòduls 1-3 = 21h) +
+    formació complementària (Mòdul 10 mercaderies / Mòdul 6 viatgers = 14h)
+    = 35h. Reprodueix el format del document oficial (pàg. de desglossament).
+    """
+    es_merc       = tipo_curso == "continu_mercancies"
+    titol_complem = ("FORMACIÓ COMPLEMENTARIA MERCADERIES" if es_merc
+                     else "FORMACIÓ COMPLEMENTARIA VIATGERS")
+    modul_complem = "Mòdul 10." if es_merc else "Mòdul 6."
+
+    w_tot = sum(_WD_DESG)
+
+    def _fila(taula, cols, shading=None, bold_tot=False):
+        """cols: 3 elements; cada un és str (una línia negra) o llista de (text,color)."""
+        fila = taula.add_row()
+        for i, contingut in enumerate(cols):
+            c = fila.cells[i]
+            _set_cell_width(c, _WD_DESG[i])
+            _add_borders(c)
+            if shading is not None:
+                _set_shading(c, shading)
+            linies = [(contingut, None)] if isinstance(contingut, str) else contingut
+            _omplir_cel_lin(c, linies, bold=(bold_tot or i == 0), size=11)
+        return fila
+
+    def _fila_titol(taula, text):
+        """Fila de títol: col A buida + títol fusionat a B+C, fons de marca."""
+        fila = taula.add_row()
+        c0 = fila.cells[0]
+        _set_cell_width(c0, _WD_DESG[0]); _add_borders(c0); _set_shading(c0, _COLOR_BRAND)
+        merged = fila.cells[1].merge(fila.cells[2])
+        _set_cell_width(merged, _WD_DESG[1] + _WD_DESG[2])
+        _add_borders(merged); _set_shading(merged, _COLOR_BRAND)
+        _cell_text(merged, text, bold=True, size=11,
+                   align=WD_ALIGN_PARAGRAPH.CENTER, color=_COLOR_WHITE_RGB)
+
+    def _nova_taula():
+        t = doc.add_table(rows=0, cols=3)
+        _set_table_width(t, w_tot)
+        _set_tbl_grid(t, _WD_DESG)
+        _set_table_cell_margin(t, top=60, right=90, bottom=60, left=90)
+        return t
+
+    def _espai():
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after  = Pt(6)
+
+    # ── Taula 1: formació obligatòria (21h) ───────────────────────────────────
+    t1 = _nova_taula()
+    _fila_titol(t1, "FORMACIÓ OBLIGATORIA PER TOTS ELS PERMISOS")
+    _fila(t1, ["Mòdul 1.", "Seguretat Viària", "7 Hores de Classe Teòrica"])
+    _fila(t1, ["Mòdul 2.", "Conducció Racional i Eficient evolució Tecnològica",
+               "7 Hores de Classe Teòrica"])
+    _fila(t1, ["Mòdul 3.", "Normativa sobre tacògraf i temps de conducció i descans",
+               [("6 Hores de Classe Teòrica", None),
+                ("1 Hora de Pràctica", _COLOR_RED_RGB)]])
+    _fila(t1, ["Total", "Mòdul Comú Obligatori", "21 hores"], shading=_COLOR_TOTAL,
+          bold_tot=True)
+
+    _espai()
+
+    # ── Taula 2: formació complementària (14h) ────────────────────────────────
+    t2 = _nova_taula()
+    _fila_titol(t2, titol_complem)
+    _fila(t2, [modul_complem, "Sensibilització i Educació Viària",
+               "14 hores de classe teòrica"])
+    _fila(t2, ["TOTAL", "Hores mòdul", "14 hores"], shading=_COLOR_TOTAL, bold_tot=True)
+
+    _espai()
+
+    # ── Taula 3: total del curs (35h) ─────────────────────────────────────────
+    t3 = _nova_taula()
+    _fila(t3, ["TOTAL", "Durada total del curs", "35 hores"], shading=_COLOR_TOTAL,
+          bold_tot=True)
+
 
 def generar_document(horari_amb_professors, ruta_sortida,
                      estado_alumnos=None, estado_practicas=None,
@@ -469,14 +716,16 @@ def generar_document(horari_amb_professors, ruta_sortida,
 
     # Dades del curs: 6 línies negreta, centrades
     nom_curs = _NOM_CURS.get(tipo_curso, "MERCADERIES")
-    texto_curs_portada = (
-        _TEXT_CURS_PORTADA_VIATGERS if tipo_curso == "viatgers"
-        else f"QUALIFICACIÓ INICIAL {nom_curs}"
-    )
+    if tipo_curso in _TEXT_CURS_PORTADA_CONTINU:
+        texto_curs_portada = _TEXT_CURS_PORTADA_CONTINU[tipo_curso]
+    elif tipo_curso == "viatgers":
+        texto_curs_portada = _TEXT_CURS_PORTADA_VIATGERS
+    else:
+        texto_curs_portada = f"QUALIFICACIÓ INICIAL {nom_curs}"
     for linia in [
-        f"FORMACIÓ COMPLEMENTÀRIA: {DADES_CURS['formacio']}",
+        f"FORMACIÓ COMPLEMENTÀRIA: {_FORMACIO_CURS_CONTINU.get(tipo_curso, DADES_CURS['formacio'])}",
         f"CURS: {texto_curs_portada}",
-        f"Durada: {DADES_CURS['durada']}",
+        f"Durada: {_DURADA_CURS.get(tipo_curso, DADES_CURS['durada'])}",
         f"Empresa autoritzada: {DADES_CURS['empresa']}",
         f"NIF: {DADES_CURS['nif']}",
         f"Número de autorització: {DADES_CURS['autoritzacio']}",
@@ -510,14 +759,32 @@ def generar_document(horari_amb_professors, ruta_sortida,
     p_salt.add_run()._r.append(br)
 
     # ── TAULA: HORARI CLASSES TEÒRICA ─────────────────────────────────────────
+    # Taula EXTERNA d'1 columna. Cada dia va dins una taula imbricada allotjada
+    # en UNA sola fila externa marcada amb w:cantSplit: Word mai parteix una
+    # fila amb cantSplit, així que el dia sencer (files d'hores + total) és
+    # INDIVISIBLE i mai queda tallat entre pàgines — el salt només cau ENTRE
+    # dies. L'externa no té vores ni marges perquè les taules imbricades quedin
+    # alineades i contínues (les vores i amplades les posen elles).
+    outer = doc.add_table(rows=0, cols=1)
+    _set_table_width(outer, _W_TOTAL)
+    _set_tbl_grid(outer, [_W_TOTAL])
+    _remove_table_borders(outer)
+    _set_table_cell_margin(outer, top=0, right=0, bottom=0, left=0)
 
-    table = doc.add_table(rows=0, cols=4)
-    _set_table_width(table, _W_TOTAL)
-    _set_tbl_grid(table, [_W_DIA, _W_HORA, _W_TEMA, _W_PROF])
-    _set_table_cell_margin(table, top=60, right=90, bottom=60, left=90)
+    _GRID_HORARI = [_W_DIA, _W_HORA, _W_TEMA, _W_PROF]
 
-    # Fila 1: "HORARI CLASSES TEÒRICA" (fusió horitzontal, fons de marca)
-    fila_titol = table.add_row()
+    def _bloc_dia_indivisible():
+        """Afegeix una fila externa indivisible (cantSplit) i hi crea la taula
+        imbricada 4-col del dia, neta de paràgrafs sobrants. La retorna."""
+        row = outer.add_row()
+        _set_row_cant_split(row)
+        cell = row.cells[0]
+        _set_cell_width(cell, _W_TOTAL)
+        return _taula_imbricada_neta(cell, _GRID_HORARI)
+
+    # ── Capçalera: títol + noms de columna (dins el primer bloc extern) ───────
+    hdr = _bloc_dia_indivisible()
+    fila_titol = hdr.add_row()
     cel_titol  = fila_titol.cells[0].merge(fila_titol.cells[3])
     _set_cell_width(cel_titol, _W_TOTAL)
     _add_borders(cel_titol)
@@ -525,20 +792,29 @@ def generar_document(horari_amb_professors, ruta_sortida,
     _cell_text(cel_titol, "HORARI CLASSES TEÒRICA",
                bold=True, size=11, align=WD_ALIGN_PARAGRAPH.CENTER,
                color=_COLOR_WHITE_RGB)
-
-    # Fila 2: capçaleres de columna (fons de marca, text blanc)
-    fila_cap = table.add_row()
+    fila_cap = hdr.add_row()
     for cell, txt, w in zip(
         fila_cap.cells,
         ["DIA", "HORA", "TEMA", "ESPECIALITAT PROFESSORAT"],
-        [_W_DIA, _W_HORA, _W_TEMA, _W_PROF],
+        _GRID_HORARI,
     ):
         _set_cell_width(cell, w)
         _add_borders(cell)
         _set_shading(cell, _COLOR_BRAND)
         _cell_text(cell, txt, bold=True, color=_COLOR_WHITE_RGB)
 
-    # ── Dies i trams ──────────────────────────────────────────────────────────
+    # ── Continu: localitzar l'última hora de classe del 2.1 (és la 1h de
+    # pràctica del Mòdul 3, agrupada dins la teoria) per marcar-la en vermell
+    # a l'horari, com fa el document oficial. No hi ha secció de pràctiques a
+    # part al continu.
+    id_tram_practica = None
+    if _es_continuo(tipo_curso):
+        for entrada in horari_amb_professors:
+            for tramo in entrada["tramos"]:
+                if tramo["tipo"] == "clase" and tramo.get("codigo") == "2.1":
+                    id_tram_practica = id(tramo)
+
+    # ── Un bloc extern indivisible per dia (files d'hores + total junts) ──────
     for entrada in horari_amb_professors:
         dia    = entrada["dia"]
         tramos = entrada["tramos"]
@@ -546,10 +822,12 @@ def generar_document(horari_amb_professors, ruta_sortida,
         dia_setmana = DIES_SETMANA_CA.get(dia.weekday(), "")
         data_text   = dia.strftime("%d/%m/%Y")
 
-        files_dia = []
+        table = _bloc_dia_indivisible()   # taula imbricada d'aquest dia
+
         for i, tramo in enumerate(tramos):
             hora_txt = _hora_rang(tramo["inicio"], tramo["fin"])
 
+            tema_red_suffix = None
             if tramo.get("prueba_fuego"):
                 # Prova de Foc: etiqueta específica, proveïdor com a professor, vermell
                 tema_txt   = "MM.PP - Prova pràctica"
@@ -559,6 +837,8 @@ def generar_document(horari_amb_professors, ruta_sortida,
                 tema_txt   = f"{tramo['codigo']} {tramo['nombre']}"
                 prof_txt   = tramo.get("profesor", "")
                 tema_color = _COLOR_RED_RGB if tramo["codigo"] in ampliacion else None
+                if id(tramo) == id_tram_practica:
+                    tema_red_suffix = " (1h pràctica)"
             elif "Transport" in tramo.get("nombre", ""):
                 # Descansos de transport (anada/tornada): part del bloc PF, vermell
                 tema_txt   = tramo["nombre"]
@@ -571,8 +851,8 @@ def generar_document(horari_amb_professors, ruta_sortida,
                 tema_color = None
 
             fila     = _afegir_fila_tram(table, hora_txt, tema_txt, prof_txt,
-                                         tema_color=tema_color)
-            files_dia.append(fila)
+                                         tema_color=tema_color,
+                                         tema_red_suffix=tema_red_suffix)
             dia_cell = fila.cells[0]
             _set_cell_width(dia_cell, _W_DIA)
             _add_borders(dia_cell)
@@ -584,16 +864,9 @@ def generar_document(horari_amb_professors, ruta_sortida,
             else:
                 _set_vmerge_continue(dia_cell)
 
-        fila_total = _afegir_fila_total(table, _total_hores_str(tramos))
-        files_dia.append(fila_total)
-
-        # Mantenir totes les files d'aquest dia juntes: cada fila (menys l'última,
-        # la del total) s'"enganxa" a la següent amb keep_with_next -- si el dia
-        # no cap sencer al que queda de pàgina, Word el salta sencer a la següent,
-        # mai el parteix entre dues files. La fila del total NO s'enganxa a res,
-        # perquè no s'ha de forçar que el dia següent quedi enganxat a aquest.
-        for fila in files_dia[:-1]:
-            _set_row_keep_with_next(fila)
+        _afegir_fila_total(table, _total_hores_str(tramos))
+        # El dia és indivisible perquè viu dins una fila externa amb cantSplit;
+        # ja no calen keep_with_next ni cantSplit fila a fila.
 
     # ── PART DOS: alumnos, pràctiques, comunicacions ───────────────────────────
 
@@ -629,10 +902,22 @@ def generar_document(horari_amb_professors, ruta_sortida,
         vdv     = estado_franjas["horario_viernes"]["valor"]
         sab     = estado_franjas["horario_sabado"]["valor"]
 
+        # FASE 3b: un grup amb valor None son dies sense classe (opció de dies
+        # del continu) — només es llisten els grups amb horari. Amb els tres
+        # grups actius (inicial, o continu de dilluns a dissabte) el text és
+        # EXACTAMENT l'històric.
+        parts_horari = []
+        if lun_jue is not None:
+            parts_horari.append(
+                f"De Dilluns a Dijous de {lun_jue['inicio']}h a {lun_jue['fin']}h."
+            )
+        if vdv is not None:
+            parts_horari.append(f"Divendres de {vdv['inicio']}h a {vdv['fin']}h.")
+        if sab is not None:
+            parts_horari.append(f"Dissabte de {sab['inicio']}h a {sab['fin']}h.")
+
         _linia(
-            f"HORARIS TEÒRICA: De Dilluns a Dijous de {lun_jue['inicio']}h a "
-            f"{lun_jue['fin']}h. Divendres de {vdv['inicio']}h a {vdv['fin']}h. "
-            f"Dissabte de {sab['inicio']}h a {sab['fin']}h.",
+            "HORARIS TEÒRICA: " + " ".join(parts_horari),
             bold=True, size=11, sb=12, sa=4,
         )
 
@@ -672,10 +957,13 @@ def generar_document(horari_amb_professors, ruta_sortida,
     data_inici = estado_calendario["fecha_inicio"]["valor"]
     data_final = estado_calendario["dia_amarillo"]["valor"]
 
+    linia_curs_comm = _TEXT_CURS_COMUNICACIONS.get(
+        tipo_curso, f"CURS QUALIFICACIÓ INICIAL DE {nom_curs}"
+    )
     for label, valor in [
         ("Correu Electronic: ",    "inspeccionscap@autoescolaolivella.com"),
         ("Telèfon de Contacte: ",  "686329958"),
-        ("",                       f"CURS QUALIFICACIÓ INICIAL DE {nom_curs}"),
+        ("",                       linia_curs_comm),
         ("Data Inici: ",           data_inici),
         ("Data Final: ",           data_final),
     ]:
@@ -692,62 +980,85 @@ def generar_document(horari_amb_professors, ruta_sortida,
         r2.font.name = _FONT
         r2.font.size = Pt(11)
 
-    # Salt de pàgina (separa COMUNICACIONS, que ara ve just després de l'horari,
-    # de la secció d'alumnes/pràctiques que abans començava aquí mateix)
-    p_salt_comm = doc.add_paragraph()
-    p_salt_comm.paragraph_format.space_before = Pt(0)
-    p_salt_comm.paragraph_format.space_after  = Pt(0)
-    br_comm = OxmlElement('w:br')
-    br_comm.set(qn('w:type'), 'page')
-    p_salt_comm.add_run()._r.append(br_comm)
+    # Salt de pàgina abans dels alumnes NOMÉS al inicial. Al continu els alumnes
+    # van just sota les dades d'inspecció, a la mateixa pàgina (sense salt).
+    if not _es_continuo(tipo_curso):
+        p_salt_comm = doc.add_paragraph()
+        p_salt_comm.paragraph_format.space_before = Pt(0)
+        p_salt_comm.paragraph_format.space_after  = Pt(0)
+        br_comm = OxmlElement('w:br')
+        br_comm.set(qn('w:type'), 'page')
+        p_salt_comm.add_run()._r.append(br_comm)
 
-    # ── Secció 1: RELACIÓ ALUMNES 130H ───────────────────────────────────────
-    _titol_seccio("RELACIÓ ALUMNES 130H", space_before=0)
+    # ── Secció 1: llistat d'alumnes ──────────────────────────────────────────
+    # Continu: un sol títol "LLISTAT ALUMNES". Inicial: "RELACIÓ ALUMNES 130H".
+    if _es_continuo(tipo_curso):
+        _titol_seccio("LLISTAT ALUMNES", space_before=8)
+    else:
+        _titol_seccio(f"RELACIÓ ALUMNES {_HORES_CURS.get(tipo_curso, '130H')}", space_before=0)
 
     alumnes_complets = [a for a in estado_alumnos["alumnos"] if a["tipo_curso"] == "completo"]
     for i, alumne in enumerate(alumnes_complets, start=1):
         _linia(f"{i}. {alumne['nombre'].upper()}", size=11, sb=5, sa=0)
         _linia(alumne["documento"], size=11, indent=Inches(0.3), sb=0, sa=5)
 
-    # ── Secció 2: AMPLIACIÓ ───────────────────────────────────────────────────
-    _titol_seccio("AMPLIACIO:", underline=False, color=_COLOR_RED_RGB)
+    # ── Secció 2: AMPLIACIÓ (només inicial; el continu no té ampliació) ──────
+    if not _es_continuo(tipo_curso):
+        _titol_seccio("AMPLIACIO:", underline=False, color=_COLOR_RED_RGB)
 
-    alumnes_ampliacio = [a for a in estado_alumnos["alumnos"] if a["tipo_curso"] == "ampliacion"]
-    if alumnes_ampliacio:
-        for i, alumne in enumerate(alumnes_ampliacio, start=1):
-            _linia(f"{i}. {alumne['nombre'].upper()}", size=11, sb=5, sa=0,
-                   color=_COLOR_RED_RGB)
-            _linia(alumne["documento"], size=11, indent=Inches(0.3), sb=0, sa=5,
-                   color=_COLOR_RED_RGB)
-    else:
-        _linia("(No hi ha alumnes d'ampliació)", size=11)
+        alumnes_ampliacio = [a for a in estado_alumnos["alumnos"] if a["tipo_curso"] == "ampliacion"]
+        if alumnes_ampliacio:
+            for i, alumne in enumerate(alumnes_ampliacio, start=1):
+                _linia(f"{i}. {alumne['nombre'].upper()}", size=11, sb=5, sa=0,
+                       color=_COLOR_RED_RGB)
+                _linia(alumne["documento"], size=11, indent=Inches(0.3), sb=0, sa=5,
+                       color=_COLOR_RED_RGB)
+        else:
+            _linia("(No hi ha alumnes d'ampliació)", size=11)
 
-    # ── Secció 3: HORARIS PRÀCTICA 130H ──────────────────────────────────────
-    _titol_seccio("HORARIS PRÀCTICA 130H")
+    # ── Secció 3: HORARIS PRÀCTICA (només inicial) ───────────────────────────
+    # El continu no té horaris de pràctica: la 1h de pràctica del 2.1 va marcada
+    # a l'horari de teoria (en vermell), no com a secció a part.
+    if not _es_continuo(tipo_curso):
+        _titol_seccio(f"HORARIS PRÀCTICA {_HORES_CURS.get(tipo_curso, '130H')}")
 
-    # Professor: Rosa l'indica via estado_practicas; la resta el calcula el motor.
-    professor = (estado_practicas or {}).get("profesor") or "—"
+        # Professor: Rosa l'indica via estado_practicas; la resta el calcula el motor.
+        professor = (estado_practicas or {}).get("profesor") or "—"
 
-    alumnes_c = sum(1 for a in estado_alumnos["alumnos"] if a["tipo_curso"] == "completo")
-    alumnes_a = sum(1 for a in estado_alumnos["alumnos"] if a["tipo_curso"] == "ampliacion")
-    dies_lect  = construir_dias_lectivos(estado_calendario)
-    franges_p  = construir_franjas_semanales(estado_franjas)
-    sessions_calc = colocar_practicas(dies_lect, franges_p, alumnes_c, alumnes_a)
+        alumnes_c = sum(1 for a in estado_alumnos["alumnos"] if a["tipo_curso"] == "completo")
+        alumnes_a = sum(1 for a in estado_alumnos["alumnos"] if a["tipo_curso"] == "ampliacion")
+        dies_lect  = construir_dias_lectivos(estado_calendario)
+        franges_p  = construir_franjas_semanales(estado_franjas)
+        sessions_calc = colocar_practicas(dies_lect, franges_p, alumnes_c, alumnes_a)
 
-    if sessions_calc:
-        for sessio in sessions_calc:
-            inici = _fmt_hora_practica(sessio["hora_inicio"].strftime("%H:%M"))
-            fi    = _fmt_hora_practica(sessio["hora_fin"].strftime("%H:%M"))
-            color = _COLOR_RED_RGB if sessio["ampliacio"] else None
-            _linia(
-                f"{sessio['data'].strftime('%d/%m/%Y')}  {inici} a {fi}  "
-                f"Professor: {professor}",
-                size=11, sb=3, sa=3, color=color,
-            )
-    else:
-        _linia("(No hi ha sessions de pràctiques registrades)", size=11)
+        if sessions_calc:
+            for sessio in sessions_calc:
+                inici = _fmt_hora_practica(sessio["hora_inicio"].strftime("%H:%M"))
+                fi    = _fmt_hora_practica(sessio["hora_fin"].strftime("%H:%M"))
+                color = _COLOR_RED_RGB if sessio["ampliacio"] else None
+                _linia(
+                    f"{sessio['data'].strftime('%d/%m/%Y')}  {inici} a {fi}  "
+                    f"Professor: {professor}",
+                    size=11, sb=3, sa=3, color=color,
+                )
+        else:
+            _linia("(No hi ha sessions de pràctiques registrades)", size=11)
 
-    # ── PART TRES: CRONOGRAMA PER SETMANES (pàgina apaïsada) ─────────────────
+    # ── PART TRES ─────────────────────────────────────────────────────────────
+    # Continu: taula de desglossament d'hores (35h) en comptes del cronograma
+    # setmanal del inicial. S'acaba aquí el document del continu.
+    if _es_continuo(tipo_curso):
+        p_salt_desg = doc.add_paragraph()
+        p_salt_desg.paragraph_format.space_before = Pt(0)
+        p_salt_desg.paragraph_format.space_after  = Pt(0)
+        br_desg = OxmlElement('w:br')
+        br_desg.set(qn('w:type'), 'page')
+        p_salt_desg.add_run()._r.append(br_desg)
+        _afegir_taula_desglossament(doc, tipo_curso)
+        doc.save(ruta_sortida)
+        return ruta_sortida
+
+    # Inicial: CRONOGRAMA PER SETMANES (pàgina apaïsada)
     cronograma = cronograma_por_semanas(horari_amb_professors)
 
     # Selecció de la taula de matèries i categories segons el tipus de curs

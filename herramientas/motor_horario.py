@@ -446,13 +446,18 @@ def colocar_materias(dias, franjas, cola):
 
 
 def colocar_materias_dos_colas(dias, franjas, cola_semana, cola_finde,
-                               prueba_fuego=None):
+                               cola_pref=None, prueba_fuego=None):
     """
     Variante de colocar_materias con regla de fin de semana (dos colas):
 
     - cola_finde  : trozos de materias obligatorias viernes/sábado. Se colocan
                     únicamente en días con weekday 4 (viernes) o 5 (sábado).
     - cola_semana : resto de trozos. Van en días lunes–jueves.
+    - cola_pref   : (Regla 2) trozos con PREFERENCIA de finde, pero NO obligatorios.
+                    Decisión ATÓMICA: si el total preferente cabe ENTERO en un cap
+                    de setmana (bloc de finde contigu) rere les obligatòries, es
+                    col·loca allà (i s'elimina de cola_semana); si no hi cap sencer,
+                    es queda a cola_semana (mai es parteix entre coles).
     - Desbordamiento: si cola_finde se agota antes de llenar un día de finde,
                       el hueco restante se llena con cola_semana.
     - prueba_fuego: dict {"fecha", "hora_inicio", "proveedor"} opcional.
@@ -461,10 +466,12 @@ def colocar_materias_dos_colas(dias, franjas, cola_semana, cola_finde,
                     prueba_fuego=True) antes de llenar el resto con las colas.
 
     Mantiene la danza del mínimo dentro de cada cola y acepta el mismo formato
-    de entrada que colocar_materias. Las dos colas se copian internamente.
+    de entrada que colocar_materias. Las colas se copian internamente. Con
+    cola_pref vacío/None el comportamiento es idéntico al de dos colas.
     """
     cola_semana = [[c, n, h] for c, n, h in cola_semana]
     cola_finde  = [[c, n, h] for c, n, h in cola_finde]
+    cola_pref   = [[c, n, h] for c, n, h in (cola_pref or [])]
 
     pf_fecha = prueba_fuego["fecha"] if prueba_fuego is not None else None
 
@@ -478,6 +485,42 @@ def colocar_materias_dos_colas(dias, franjas, cola_semana, cola_finde,
         else:
             h = horas_clase_de_dia(franja["inicio"], franja["fin"])
             horas_por_dia[dia] = Decimal(str(h))
+
+    # ── Regla 2: decisión atómica del/los preferente(s) (finde entero o semana) ──
+    pref_codigos    = {e[0] for e in cola_pref}
+    pref_horas      = sum((e[2] for e in cola_pref), Decimal("0"))
+    pref_asignacion = {}   # dia -> horas del preferente a colocar (tras obligatorias)
+    if cola_pref:
+        # Simular el consumo de las obligatorias sobre los días de finde (por
+        # capacidad y en orden, igual que el bucle) → hueco libre de finde por día.
+        dias_finde  = [d for d in dias if d.weekday() in (4, 5) and horas_por_dia[d] > Decimal("0")]
+        libre_finde = {}
+        resto_oblig = sum((e[2] for e in cola_finde), Decimal("0"))
+        for d in dias_finde:
+            usado = min(horas_por_dia[d], resto_oblig)
+            resto_oblig    -= usado
+            libre_finde[d]  = horas_por_dia[d] - usado
+        # Agrupar los días de finde en BLOQUES de fin de semana (calendario-adyacentes).
+        bloques = []
+        for d in dias_finde:
+            if bloques and (d - bloques[-1][-1]).days == 1:
+                bloques[-1].append(d)
+            else:
+                bloques.append([d])
+        # Primer bloque con hueco contiguo >= pref_horas → el preferente va ENTERO ahí.
+        for bloque in bloques:
+            if sum((libre_finde[d] for d in bloque), Decimal("0")) >= pref_horas:
+                resto = pref_horas
+                for d in bloque:
+                    take = min(libre_finde[d], resto)
+                    if take > Decimal("0"):
+                        pref_asignacion[d] = take
+                        resto -= take
+                # Se coloca en finde → se saca de cola_semana (no se parte entre colas).
+                cola_semana = [e for e in cola_semana if e[0] not in pref_codigos]
+                break
+        # Si ningún bloque tiene hueco suficiente: pref_asignacion queda vacío y el
+        # preferente se queda en cola_semana (entero, en su posición natural).
 
     colocaciones = []
     sem_idx = 0
@@ -521,6 +564,18 @@ def colocar_materias_dos_colas(dias, franjas, cola_semana, cola_finde,
 
         if dia.weekday() in (4, 5):
             fin_idx, horas_libres = _volcar(dia, cola_finde, fin_idx, horas_libres)
+            # Regla 2: el preferente va TRAS las obligatorias y ANTES del overflow de
+            # semana, en el cap de setmana que se le asignó (colocación contigua).
+            if dia in pref_asignacion and horas_libres > Decimal("0"):
+                h_pref = min(pref_asignacion[dia], horas_libres)
+                if h_pref > Decimal("0"):
+                    colocaciones.append({
+                        "dia":    dia,
+                        "codigo": cola_pref[0][0],
+                        "nombre": cola_pref[0][1],
+                        "horas":  h_pref,
+                    })
+                    horas_libres -= h_pref
             if horas_libres > Decimal("0"):
                 sem_idx, horas_libres = _volcar(dia, cola_semana, sem_idx, horas_libres)
         else:
@@ -545,11 +600,16 @@ def construir_franjas_semanales(estado_franjas):
     El motor necesita objetos time, indexados por weekday (0=lunes … 6=domingo):
         {0: {"inicio": time(18,0), "fin": time(21,15)}, ..., 6: None}
 
-    Decisión sobre horarios incompletos: si alguno de los tres no ha sido recogido
-    todavía (valor None o conseguido=False), se lanza ValueError. Esta función vive
+    Decisión sobre horarios incompletos: si alguno de los tres no está
+    conseguido (conseguido=False), se lanza ValueError. Esta función vive
     en la frontera del motor y solo debe llamarse cuando el bloque franjas está
     completo; un fallo explícito es más seguro que producir un horario parcialmente
     incorrecto sin avisar.
+
+    FASE 3b (días del continuo): un horario conseguido con valor None significa
+    "esos días NO tienen clase" (grupo excluido por la opción de días elegida)
+    — sus weekdays salen como None, el mismo mecanismo que el domingo, y el
+    motor ya los salta.
 
     Parámetros:
         estado_franjas : dict con los tres horarios del bloque franjas del cerebro
@@ -557,9 +617,9 @@ def construir_franjas_semanales(estado_franjas):
     Devuelve:
         dict {weekday (int): {"inicio": time, "fin": time} | None}
     """
-    # Verificar que los tres horarios están disponibles antes de construir nada
+    # Verificar que los tres horarios están resueltos antes de construir nada
     for nombre in ("horario_lun_jue", "horario_viernes", "horario_sabado"):
-        if not estado_franjas[nombre]["conseguido"] or estado_franjas[nombre]["valor"] is None:
+        if not estado_franjas[nombre]["conseguido"]:
             raise ValueError(
                 f"El horario '{nombre}' aún no está recogido. "
                 "Llama a esta función solo cuando el bloque franjas esté completo."
@@ -569,15 +629,18 @@ def construir_franjas_semanales(estado_franjas):
         """Convierte "HH:MM" a un objeto time."""
         return datetime.strptime(hm, "%H:%M").time()
 
-    lj = estado_franjas["horario_lun_jue"]["valor"]
-    vi = estado_franjas["horario_viernes"]["valor"]
-    sa = estado_franjas["horario_sabado"]["valor"]
+    def _franja(nombre):
+        """Franja del grupo, o None si el grupo quedó excluido (valor None)."""
+        v = estado_franjas[nombre]["valor"]
+        if v is None:
+            return None
+        return {"inicio": _parsear(v["inicio"]), "fin": _parsear(v["fin"])}
 
     # Lunes a jueves comparten el mismo horario; se usa el mismo dict porque
     # el motor solo lee estos valores y nunca los modifica en su lugar.
-    franja_lj = {"inicio": _parsear(lj["inicio"]), "fin": _parsear(lj["fin"])}
-    franja_vi = {"inicio": _parsear(vi["inicio"]), "fin": _parsear(vi["fin"])}
-    franja_sa = {"inicio": _parsear(sa["inicio"]), "fin": _parsear(sa["fin"])}
+    franja_lj = _franja("horario_lun_jue")
+    franja_vi = _franja("horario_viernes")
+    franja_sa = _franja("horario_sabado")
 
     return {
         0: franja_lj,  # lunes
@@ -716,23 +779,34 @@ def construir_cola_desde_plantilla(plantilla, asignaturas):
     ]
 
 
-def construir_colas_desde_plantilla(plantilla, asignaturas, obligatorias_finde):
+def construir_colas_desde_plantilla(plantilla, asignaturas, obligatorias_finde,
+                                    preferentes_finde=frozenset()):
     """
-    Separa la plantilla en dos colas manteniendo el orden relativo de cada una:
+    Separa la plantilla en colas manteniendo el orden relativo de cada una:
         cola_semana : trozos cuyo código NO está en obligatorias_finde
         cola_finde  : trozos cuyo código SÍ está en obligatorias_finde
+        cola_pref   : trozos cuyo código está en preferentes_finde (Regla 2)
+
+    Los trozos preferentes van TAMBIÉN en cola_semana, en su posición natural de
+    plantilla: son su ubicación por defecto. cola_pref es un marcador para que el
+    motor decida atómicamente si caben ENTEROS en un fin de semana (→ los saca de
+    cola_semana y los coloca en finde) o no (→ se quedan en cola_semana).
 
     Pensada para pasar directamente a colocar_materias_dos_colas.
 
-    Devuelve (cola_semana, cola_finde) — listas de [codigo, nombre, horas_Decimal].
+    Devuelve (cola_semana, cola_finde, cola_pref) — listas de
+    [codigo, nombre, horas_Decimal].
     """
     por_codigo  = {a["codigo"]: a for a in asignaturas}
     cola_semana = []
     cola_finde  = []
+    cola_pref   = []
     for codigo, horas in plantilla:
         entrada = [codigo, por_codigo[codigo]["nombre"], Decimal(str(horas))]
         if codigo in obligatorias_finde:
             cola_finde.append(entrada)
         else:
-            cola_semana.append(entrada)
-    return cola_semana, cola_finde
+            cola_semana.append(entrada)                  # ubicación por defecto
+            if codigo in preferentes_finde:
+                cola_pref.append([codigo, entrada[1], Decimal(str(horas))])
+    return cola_semana, cola_finde, cola_pref

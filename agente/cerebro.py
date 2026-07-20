@@ -21,6 +21,10 @@ from agente.recogida_franjas import (
     siguiente_dato_pendiente as siguiente_pendiente_franjas,
     marcar_conseguido as marcar_conseguido_franjas,
     bloque_completo as bloque_completo_franjas,
+    elegir_dias as elegir_dias_franjas,
+    fijar_dias_todos as fijar_dias_todos_franjas,
+    grupo_activo as grupo_activo_franjas,
+    OPCIONES_DIAS,
 )
 from agente.recogida_orden import (
     crear_estado as crear_estado_orden,
@@ -100,9 +104,11 @@ _PATRON_HORA = re.compile(r"\d{1,2}:\d{2}")
 HERRAMIENTA_GUARDAR_TIPO_CURSO = {
     "name": "guardar_tipo_curso",
     "description": (
-        "Guarda el tipo de curso CAP que Rosa ha elegido. "
-        "Llámala cuando Rosa haya indicado claramente si el curso es de mercancías o de viajeros. "
-        "Valores válidos: 'mercancias' (transport de mercaderies) o 'viatgers' (transport de viatgers)."
+        "Guarda el curso CAP que Rosa ha elegido, con sus DOS ejes: "
+        "el tipo de formación ('inicial' de 130h o 'continu' de 35h) y la "
+        "modalidad ('mercancias' o 'viatgers'). Llámala cuando Rosa haya "
+        "indicado claramente AMBAS cosas. La ampliación no es un tipo de "
+        "curso propio: es un tipo de alumno dentro del inicial."
     ),
     "input_schema": {
         "type": "object",
@@ -110,10 +116,18 @@ HERRAMIENTA_GUARDAR_TIPO_CURSO = {
             "tipo_curso": {
                 "type": "string",
                 "enum": ["mercancias", "viatgers"],
-                "description": "Tipo de curso: 'mercancias' o 'viatgers'."
+                "description": "Modalidad: 'mercancias' o 'viatgers'."
+            },
+            "tipo_formacio": {
+                "type": "string",
+                "enum": ["inicial", "continu"],
+                "description": (
+                    "Tipo de formación: 'inicial' (130 horas) o "
+                    "'continu' (formació contínua, 35 horas)."
+                )
             }
         },
-        "required": ["tipo_curso"]
+        "required": ["tipo_curso", "tipo_formacio"]
     }
 }
 
@@ -417,6 +431,32 @@ HERRAMIENTA_AJUSTAR_FECHA_INICIO = {
     }
 }
 
+HERRAMIENTA_ELEGIR_DIAS_SEMANA = {
+    "name": "elegir_dias_semana",
+    "description": (
+        "Guarda la opción de días de la semana que Rosa ha elegido para el "
+        "CAP CONTINUO (solo existe en el continuo; el inicial siempre es de "
+        "lunes a sábado y NO usa esta herramienta). Llámala cuando Rosa haya "
+        "elegido una de las 6 opciones del menú."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "opcion": {
+                "type": "integer",
+                "enum": [1, 2, 3, 4, 5, 6],
+                "description": (
+                    "Opción elegida: 1=lunes a jueves, 2=lunes a viernes, "
+                    "3=lunes a jueves y sábado, 4=viernes y sábados, "
+                    "5=lunes a sábado, 6=solo sábados."
+                )
+            }
+        },
+        "required": ["opcion"]
+    }
+}
+
+
 _HERRAMIENTAS = [
     HERRAMIENTA_GUARDAR_TIPO_CURSO, HERRAMIENTA_VALIDAR_FECHA,
     HERRAMIENTA_PROPONER_INICIO, HERRAMIENTA_VALIDAR_HORARIO, HERRAMIENTA_CONFIRMAR_DATO,
@@ -424,6 +464,7 @@ _HERRAMIENTAS = [
     HERRAMIENTA_MARCAR_PROFESOR_GENERAL, HERRAMIENTA_ANADIR_EXCEPCION_PROFESOR,
     HERRAMIENTA_TERMINAR_PROFESORES, HERRAMIENTA_GUARDAR_PROFESOR_PRACTICAS,
     HERRAMIENTA_GUARDAR_PRUEBA_FUEGO, HERRAMIENTA_AJUSTAR_FECHA_INICIO,
+    HERRAMIENTA_ELEGIR_DIAS_SEMANA,
 ]
 
 # Tools de validación pura (sin efectos secundarios): siempre disponibles, en cualquier bloque.
@@ -436,7 +477,7 @@ _TOOLS_POR_BLOQUE = {
     "tipo_curso":     {"guardar_tipo_curso"},
     "calendario":     {"confirmar_dato"},
     "prueba_fuego":   {"guardar_prueba_fuego"},
-    "franjas":        {"confirmar_dato"},
+    "franjas":        {"confirmar_dato", "elegir_dias_semana"},
     "ajustar_inicio": {"ajustar_fecha_inicio"},
     "orden":          {"confirmar_dato"},
     "alumnos":        {"anadir_alumno", "terminar_alumnos"},
@@ -590,15 +631,46 @@ def _instrucciones_horario(nombre_dato):
 
 
 def _contexto_franjas(estado_franjas):
-    """Genera la parte variable del system prompt para el bloque franjas horarias."""
+    """Genera la parte variable del system prompt para el bloque franjas horarias.
+
+    FASE 3b: si la opción de días está pendiente (solo pasa en el CAP continuo
+    — en el inicial se fija sola a lunes-sábado), lo primero es el menú de las
+    6 opciones. Después, los horarios: solo los de los grupos de días activos
+    (los excluidos figuran como NO APLICA y no se preguntan)."""
+    dias_sem = estado_franjas.get("dias_semana", {"conseguido": True, "valor": None})
+
+    # Paso previo (solo continuo): elegir la opción de días
+    if not dias_sem["conseguido"]:
+        lineas = [
+            "ESTADO: pendiente de elegir los DÍAS DE LA SEMANA del curso continuo.",
+            "",
+            "AHORA TE TOCA: preguntar a Rosa qué días de la semana tendrá clase",
+            "este curso. Muéstrale este menú (numerado, tal cual):",
+            "",
+        ]
+        for n, conf in OPCIONES_DIAS.items():
+            lineas.append(f"  {n}. {conf['etiqueta']}")
+        lineas += [
+            "",
+            "Cuando Rosa elija una opción (por número o describiéndola), llama a",
+            "elegir_dias_semana con el número de la opción (1-6).",
+            "Después se pedirán SOLO los horarios de los días incluidos en la opción.",
+        ]
+        return "\n".join(lineas)
+
     lineas = ["ESTADO DE LA RECOGIDA DE LOS HORARIOS:"]
+    if dias_sem["valor"]:
+        opc = dias_sem["valor"]["opcion"]
+        lineas.insert(0, f"DÍAS DEL CURSO: opción {opc} — {OPCIONES_DIAS[opc]['etiqueta']}.\n")
 
     for nombre in ["horario_lun_jue", "horario_viernes", "horario_sabado"]:
         etiqueta = _NOMBRES_LEGIBLES_FRANJAS[nombre]
         entrada = estado_franjas[nombre]
         if entrada["conseguido"]:
             v = entrada["valor"]
-            if isinstance(v, dict) and "inicio" in v and "fin" in v:
+            if v is None:
+                lineas.append(f"  - {etiqueta}: NO APLICA (esos días no tienen clase en este curso)")
+            elif isinstance(v, dict) and "inicio" in v and "fin" in v:
                 lineas.append(f"  - {etiqueta}: YA CONSEGUIDO → de {v['inicio']} a {v['fin']}")
             else:
                 lineas.append(f"  - {etiqueta}: YA CONSEGUIDO → {v} (formato pendiente de corregir)")
@@ -957,30 +1029,39 @@ def _contexto_prueba_fuego(estado_pf):
 def _contexto_tipo_curso(estado_tipo_curso):
     """Genera la parte variable del system prompt para el bloque tipo de curso.
 
-    FASE 1 (dos ejes): el estado ya guarda tipo_formacio + modalitat, pero la
-    conversación con Rosa es EXACTAMENTE la de siempre (solo existe el inicial;
-    elegir mercancías/viajeros es elegir la modalidad del inicial)."""
-    modalitat = estado_tipo_curso["modalitat"]
-    terminado = estado_tipo_curso["terminado"]
+    Dos ejes: tipo_formacio (inicial 130h / continu 35h) + modalitat
+    (mercancies / viatgers). La tool los guarda juntos en una llamada."""
+    tipo_formacio = estado_tipo_curso["tipo_formacio"]
+    modalitat     = estado_tipo_curso["modalitat"]
+    terminado     = estado_tipo_curso["terminado"]
 
     if terminado:
-        etiqueta = "MERCANCIES" if modalitat == "mercancies" else "VIATGERS"
-        return f"TIPUS DE CURS: COMPLETAT ({etiqueta})."
+        etiq_form = "CONTINU 35h" if tipo_formacio == "continu" else "INICIAL 130h"
+        etiq_mod  = "MERCANCIES" if modalitat == "mercancies" else "VIATGERS"
+        return f"TIPUS DE CURS: COMPLETAT ({etiq_form} de {etiq_mod})."
 
-    if modalitat is None:
+    if modalitat is None or tipo_formacio is None:
         return (
-            "ESTADO: pendiente de elegir el tipo de curso.\n"
+            "ESTADO: pendiente de elegir el curso.\n"
             "\n"
-            "AHORA TE TOCA: preguntar a Rosa qué tipo de curso CAP va a preparar.\n"
+            "AHORA TE TOCA: preguntar a Rosa qué curso CAP va a preparar. Son DOS\n"
+            "datos (puedes preguntarlos juntos o por separado, como fluya):\n"
             "\n"
-            "Hay dos opciones:\n"
-            "  · MERCANCIES: Qualificació Inicial de transport de Mercaderies\n"
-            "  · VIATGERS:   Qualificació Inicial de transport de Viatgers\n"
+            "  1. TIPO DE FORMACIÓN:\n"
+            "     · INICIAL: Qualificació Inicial, 130 horas (el de siempre)\n"
+            "     · CONTINU: Formació Contínua, 35 horas\n"
+            "     (Si Rosa menciona 'ampliación': NO es un curso propio, es un tipo\n"
+            "      de alumno dentro del inicial — acláraselo y sigue con estos dos.)\n"
             "\n"
-            "Cuando Rosa elija uno, llama a guardar_tipo_curso con 'mercancias' o 'viatgers'."
+            "  2. MODALIDAD:\n"
+            "     · MERCANCIES: transport de Mercaderies\n"
+            "     · VIATGERS:   transport de Viatgers\n"
+            "\n"
+            "Cuando tengas AMBOS datos claros, llama a guardar_tipo_curso con\n"
+            "tipo_formacio ('inicial' o 'continu') y tipo_curso ('mercancias' o 'viatgers')."
         )
 
-    return f"TIPUS DE CURS: {modalitat} (pendent de confirmar)."
+    return f"TIPUS DE CURS: {tipo_formacio} de {modalitat} (pendent de confirmar)."
 
 
 def _contexto_ajustar_inicio(estados):
@@ -1171,11 +1252,46 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
         motivo = _fuera_de_turno("tipo_curso", bloque_actual)
         if motivo:
             return {"tipo_guardado": False, "motivo": motivo}
-        tipo = argumentos["tipo_curso"]
-        guardado = guardar_tipo_curso_tc(estados["tipo_curso"], tipo)
+        tipo          = argumentos["tipo_curso"]
+        # Sesiones antiguas pueden llamar sin tipo_formacio: el histórico era inicial.
+        tipo_formacio = argumentos.get("tipo_formacio", "inicial")
+        guardado = guardar_tipo_curso_tc(estados["tipo_curso"], tipo, tipo_formacio)
         if guardado:
-            return {"tipo_guardado": True, "tipo": tipo}
-        return {"tipo_guardado": False, "motivo": f"Valor no vàlid: {tipo!r}. Usa 'mercancias' o 'viatgers'."}
+            # FASE 3b: el paso de días de la semana solo existe en el continuo.
+            # En el inicial se fija aquí a lunes-sábado (comportamiento
+            # histórico) y Rosa nunca ve el menú de opciones.
+            if tipo_formacio != "continu":
+                fijar_dias_todos_franjas(estados["franjas"])
+            return {"tipo_guardado": True, "tipo": tipo, "tipo_formacio": tipo_formacio}
+        if tipo_formacio == "ampliacio":
+            return {"tipo_guardado": False, "motivo": (
+                "L'ampliació no és un tipus de curs propi: és un tipus d'alumne "
+                "dins del curs inicial. Tria 'inicial' o 'continu'."
+            )}
+        return {"tipo_guardado": False, "motivo": (
+            f"Combinació no vàlida: {tipo_formacio!r} + {tipo!r}. "
+            "tipo_formacio: 'inicial' o 'continu'; tipo_curso: 'mercancias' o 'viatgers'."
+        )}
+    if nombre == "elegir_dias_semana":
+        motivo = _fuera_de_turno("franjas", bloque_actual)
+        if motivo:
+            return {"dias_guardados": False, "motivo": motivo}
+        if estados["tipo_curso"]["tipo_formacio"] != "continu":
+            return {"dias_guardados": False, "motivo": (
+                "La opció de dies només existeix al CAP CONTINU. Aquest curs és "
+                "inicial: sempre va de dilluns a dissabte, no cal triar res."
+            )}
+        opcion = argumentos["opcion"]
+        if not elegir_dias_franjas(estados["franjas"], opcion):
+            return {"dias_guardados": False, "motivo": f"Opció no vàlida: {opcion!r}. Usa 1-6."}
+        conf = OPCIONES_DIAS[opcion]
+        return {
+            "dias_guardados": True,
+            "opcion": opcion,
+            "etiqueta": conf["etiqueta"],
+            "dias": conf["dias"],
+        }
+
     if nombre == "validar_fecha":
         return parsear_fecha(argumentos["fecha"])
     if nombre == "proponer_inicio":
@@ -1197,6 +1313,15 @@ def _ejecutar_herramienta(nombre, argumentos, estados, bloque_actual):
                 "motivo": (
                     f"'{nombre_dato}' no pertenece al paso activo ('{bloque_actual}'). "
                     "Comprueba qué paso toca ahora y confirma el dato correcto."
+                ),
+            }
+        if nombre_dato == "dias_semana":
+            return {
+                "guardado": False,
+                "nombre_dato": nombre_dato,
+                "motivo": (
+                    "La opció de dies no es confirma amb confirmar_dato: "
+                    "usa la herramienta elegir_dias_semana amb l'opció 1-6."
                 ),
             }
         estado_bloque = estados[bloque_actual]
