@@ -44,25 +44,23 @@
 ASIGNATURAS_CONTINUO_MERCANCIAS = [
     # Mòdul 1 — Seguretat viària (7h)
     {"codigo": "3.1",
-     "nombre": "Tenir consciència dels riscos de la carretera i els accidents de treball",
+     "nombre": "Riscos carretera i accidents treball",
      "horas": "3.5"},
     {"codigo": "3.4",
-     "nombre": "Tenir consciència de la importància de l'aptitud física i mental",
+     "nombre": "Aptitud física i mental",
      "horas": "3.5"},
     # Mòdul 2 — Conducció racional i eficient i evolució tecnològica (7h)
     {"codigo": "1.2",
-     "nombre": "Conèixer les característiques tècniques i el funcionament dels dispositius "
-               "de seguretat a fi de dominar el vehicle, minimitzar el seu desgast i "
-               "prevenir les anomalies de funcionament",
+     "nombre": "Dispositius de Seguretat",
      "horas": "3.5"},
     {"codigo": "1.3",
-     "nombre": "Poder optimitzar el consum de carburant",
+     "nombre": "Optimitzar el consum de carburant",
      "horas": "3.5"},
     # Mòdul 3 — Normativa sobre tacògraf i temps de conducció i descans (7h).
     # La 1h de pràctica (simulador de tacògraf digital) va agrupada amb les 6h de
     # teoria en una sola assignatura (és formal, no la fan), com MM.PP al inicial.
     {"codigo": "2.1",
-     "nombre": "Conèixer l'entorn social del transport per carretera i la seva reglamentació",
+     "nombre": "Entorn social del transport",
      "horas": "7"},
     # Mòdul 10 — bloc complementari (14h, un sol bloc d'aula)
     {"codigo": "Mòdul 10",
